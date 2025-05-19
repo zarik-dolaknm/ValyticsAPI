@@ -4,6 +4,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const rateLimit = require('express-rate-limit');
 const axiosRateLimit = require('axios-rate-limit');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
@@ -41,6 +43,125 @@ app.use(apiLimiter);
 function cleanText(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
+
+// Swagger/OpenAPI ayarları
+const swaggerDefinition = {
+  openapi: '3.0.0',
+  info: {
+    title: 'Valytics VLR.gg API',
+    version: '1.0.0',
+    description: 'VLR.gg scraping API dokümantasyonu',
+  },
+  servers: [
+    {
+      url: `http://localhost:${PORT}`,
+      description: 'Local server',
+    },
+  ],
+};
+
+const swaggerOptions = {
+  swaggerDefinition,
+  apis: [__filename], // Sadece bu dosyadaki JSDoc yorumlarını kullan
+};
+
+const swaggerSpec = swaggerJSDoc(swaggerOptions);
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+/**
+ * @openapi
+ * /api/matches/completed:
+ *   get:
+ *     summary: Tamamlanmış maçları getirir
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Döndürülecek maç sayısı (varsayılan 10)
+ *     responses:
+ *       200:
+ *         description: Maç listesi
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/matches/{id}:
+ *   get:
+ *     summary: Maç detaylarını getirir
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Maç ID
+ *     responses:
+ *       200:
+ *         description: Maç detayları
+ *       404:
+ *         description: Maç bulunamadı
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/events:
+ *   get:
+ *     summary: Etkinlik listesini getirir
+ *     responses:
+ *       200:
+ *         description: Etkinlik listesi
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/events/{eventId}/matches:
+ *   get:
+ *     summary: Bir etkinliğin maçlarını getirir
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Etkinlik ID
+ *     responses:
+ *       200:
+ *         description: Maç listesi
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/players/{id}:
+ *   get:
+ *     summary: Oyuncu detaylarını getirir
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Oyuncu ID
+ *       - in: query
+ *         name: timespan
+ *         schema:
+ *           type: string
+ *         description: İstatistik zaman aralığı (opsiyonel)
+ *     responses:
+ *       200:
+ *         description: Oyuncu detayları
+ *       500:
+ *         description: Hata
+ */
 
 // Ana endpoint
 app.get('/', (req, res) => {

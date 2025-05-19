@@ -308,4 +308,14 @@ Katkıda bulunmak isterseniz, lütfen pull request göndermekten çekinmeyin.
 
 ## Lisans
 
-Bu proje [Lisans Adı]'nı kullanır. (Lisans adını buraya ekleyin) 
+Bu proje [Lisans Adı]'nı kullanır. (Lisans adını buraya ekleyin)
+
+## Swagger / OpenAPI Desteği
+
+API'nin tüm endpoint ve parametrelerini interaktif olarak incelemek ve test etmek için Swagger arayüzünü kullanabilirsiniz.
+
+- Swagger UI'ya erişmek için sunucuyu başlattıktan sonra şu adresi ziyaret edin:
+
+  [http://localhost:4000/api-docs](http://localhost:4000/api-docs)
+
+Swagger/OpenAPI dokümantasyonu otomatik olarak güncellenir. Buradan endpoint'leri deneyebilir, parametreleri görebilir ve örnek istekler oluşturabilirsiniz. 
