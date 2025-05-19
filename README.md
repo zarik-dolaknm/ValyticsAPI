@@ -14,8 +14,8 @@ Bu proje, maç verilerini ve detaylarını sunan bir REST API'dir.
 
 1.  Projeyi klonlayın:
     ```bash
-    git clone <repo-url>
-    cd vlr-api
+    git clone https://github.com/zarik-dolaknm/ValyticsAPI
+    cd ValyticsAPI
     ```
 2.  Bağımlılıkları yükleyin:
     ```bash
