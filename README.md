@@ -1,10 +1,10 @@
-# VLR.gg API
+# Valytics API
 
-Bu proje, VLR.gg sitesinden web scraping yaparak maç verilerini ve detaylarını sunan bir REST API'dir.
+Bu proje, maç verilerini ve detaylarını sunan bir REST API'dir.
 
 ## Özellikler
 
-- VLR.gg üzerinden maç verilerini çekme
+
 - Tamamlanmış maçları listeleme
 - Belirli bir maçın detaylarını getirme
 - Belirli bir etkinliğin maçlarını listeleme
@@ -45,9 +45,8 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 
     ```json
     {
-      "message": "VLR.gg API is running",
+      "message": "Valytics API is running",
       "endpoints": {
-        "matches": "/api/matches", // Not: Bu endpoint henüz implemente edilmedi.
         "matchDetails": "/api/matches/:id",
         "eventMatches": "/api/events/:eventId/matches",
         "completedMatches": "/api/matches/completed"
@@ -58,7 +57,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 ### Tamamlanmış Maçları Getirme
 
 -   `GET /api/matches/completed`
-    -   VLR.gg sonuçlar sayfasından tamamlanmış maçların özet bir listesini döndürür. Her maç için sadece temel bilgiler (takım isimleri, skorlar, event, tarih, url) yer alır. Oyuncu istatistikleri ve maç içi detaylar bu endpointte bulunmaz.
+    -   Maçların özet bir listesini döndürür. Her maç için sadece temel bilgiler (takım isimleri, skorlar, event, tarih, url) yer alır. Oyuncu istatistikleri ve maç içi detaylar bu endpointte bulunmaz.
 
     -   **Query Parametreleri:**
         -   `limit` (isteğe bağlı): Döndürülecek maksimum maç sayısı. Varsayılan: 10.
@@ -92,7 +91,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
     -   Belirli bir maç ID'sine ait detaylı bilgileri döndürür.
 
     -   **URL Parametreleri:**
-        -   `id` (gerekli): VLR.gg maç ID'si (Örnek: 459829).
+        -   `id` (gerekli): Maç ID'si (Örnek: 459829).
 
     -   **Örnek Kullanım:** `/api/matches/459829`
 
@@ -165,7 +164,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
     -   Belirli bir etkinlik ID'sine ait maçların listesini döndürür.
 
     -   **URL Parametreleri:**
-        -   `eventId` (gerekli): VLR.gg etkinlik ID'si.
+        -   `eventId` (gerekli): Etkinlik ID'si.
 
     -   **Örnek Kullanım:** `/api/events/1188/matches`
 
@@ -210,7 +209,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 ### Etkinlik Listesini Getirme
 
 -   `GET /api/events`
-    -   VLR.gg etkinlikler sayfasından güncel etkinliklerin bir listesini döndürür.
+    -   Güncel etkinliklerin bir listesini döndürür.
 
     -   **Query Parametreleri:**
         -   Şu anda yok. Gelecekte filtreleme veya sıralama eklenebilir.
@@ -228,10 +227,10 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
     -   Belirli bir oyuncu ID'sine ait detaylı bilgileri (istatistikler, takımlar, dereceler vb.) döndürür.
 
     -   **URL Parametreleri:**
-        -   `id` (gerekli): VLR.gg oyuncu ID'si (Örnek: 312).
+        -   `id` (gerekli): Oyuncu ID'si (Örnek: 312).
 
     -   **Query Parametreleri:**
-        -   `timespan` (isteğe bağlı): İstatistiklerin çekileceği zaman dilimi. Alabileceği değerler: `30d`, `60d`, `90d`, `all`. Belirtilmezse varsayılan değer kullanılır (VLR.gg'nin varsayılanı).
+        -   `timespan` (isteğe bağlı): İstatistiklerin çekileceği zaman dilimi. Alabileceği değerler: `30d`, `60d`, `90d`, `all`. Belirtilmezse varsayılan değer kullanılır.
 
     -   **Örnek Kullanım:**
         -   `/api/players/312` (Varsayılan zaman dilimi)
@@ -348,7 +347,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 -   `GET /api/teams/:id/maps-stats`
     -   Belirli bir takımın harita istatistiklerini ve oynanan agent comp'larını (ajan dizilimleri) döndürür.
     -   **URL Parametreleri:**
-        -   `id` (gerekli): VLR.gg takım ID'si (Örnek: 474).
+        -   `id` (gerekli): Takım ID'si (Örnek: 474).
     -   **Örnek Kullanım:** `/api/teams/474/maps-stats`
     -   **Dönen Veri Yapısı:**
         ```json
@@ -504,9 +503,7 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 
 ## Notlar
 
--   Web scraping, kaynak sitenin HTML yapısındaki değişikliklerden etkilenebilir. VLR.gg'nin yapısı değiştiğinde API'nin çalışması bozulabilir ve selector'lerin güncellenmesi gerekebilir.
--   Rate limiting, VLR.gg sunucularına aşırı yüklenmeyi önlemek için uygulanmıştır. Çok hızlı ardışık istekler rate limitine takılabilir.
-- `/api/matches` endpointi şu anda implemente edilmemiştir.
+-   Rate limiting, sunuculara aşırı yüklenmeyi önlemek için uygulanmıştır. Çok hızlı ardışık istekler rate limitine takılabilir.
 
 ## Katkıda Bulunma
 
