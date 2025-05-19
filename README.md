@@ -385,6 +385,62 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         ]
         ```
 
+### Takım Profili ve Dikkat Çekici İstatistikler
+
+-   `GET /api/teams/:id`
+    -   Belirli bir takımın profilini, kadrosunu, staff bilgisini, toplam kazancını, son maçlarını ve dikkat çekici istatistiklerini döndürür.
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "id": "2593",
+          "name": "FNATIC",
+          "tag": "FNC",
+          "logo": "https://owcdn.net/img/62a40cc2b5e29.png",
+          "region": "Europe",
+          "socials": {
+            "website": "https://fnatic.com",
+            "twitter": "@FNATIC"
+          },
+          "roster": [
+            { "id": "123", "name": "Boaster", "realName": "Jake Howlett", "role": "player" },
+            { "id": "124", "name": "crashies", "realName": "Austin Roberts", "role": "player" }
+          ],
+          "staff": [
+            { "name": "CoJo", "realName": "", "role": "manager" }
+          ],
+          "totalWinnings": "$1,417,285",
+          "recentMatches": [
+            { "event": "VCT 25: EMEA Stage 1 Playoffs", "opponent": "Team Heretics", "score": "3 : 0", "date": "2025/05/18" }
+          ],
+          "stats": {
+            "totalMatches": 120,
+            "totalWins": 80,
+            "totalLosses": 40,
+            "winrate": "66.7%",
+            "last10": { "wins": 7, "losses": 3 },
+            "mostPlayedMap": "Ascent",
+            "bestMap": "Bind",
+            "worstMap": "Icebox",
+            "last10MostPlayedMap": "Lotus",
+            "last10BestMap": "Bind",
+            "last10WorstMap": "Split"
+          }
+        }
+        ```
+    -   **Açıklama:**
+        -   `stats` objesi takımın dikkat çekici istatistiklerini içerir:
+            -   `totalMatches`: Toplam oynanan maç
+            -   `totalWins`: Toplam galibiyet
+            -   `totalLosses`: Toplam mağlubiyet
+            -   `winrate`: Genel kazanma oranı
+            -   `last10`: Son 10 maçta galibiyet/mağlubiyet
+            -   `mostPlayedMap`: En çok oynanan harita (tüm zamanlar)
+            -   `bestMap`: En yüksek winrate'e sahip harita (tüm zamanlar, en az 5 maç)
+            -   `worstMap`: En düşük winrate'e sahip harita (tüm zamanlar, en az 5 maç)
+            -   `last10MostPlayedMap`: Son 10 maçta en çok oynanan harita
+            -   `last10BestMap`: Son 10 maçta en yüksek winrate'e sahip harita (en az 2 maç)
+            -   `last10WorstMap`: Son 10 maçta en düşük winrate'e sahip harita (en az 2 maç)
+
 ### API Sağlık Kontrolü (Health Check)
 
 -   `GET /api/health`

@@ -141,6 +141,77 @@ getTeams.profile = async function(teamId) {
     if (match) totalWinnings = match[0];
   }
   const recentMatches = await getTeamMatches(teamId);
+  const mapStats = await getTeams.mapStats(teamId);
+  let totalMatches = 0, totalWins = 0, totalLosses = 0;
+  let bestMap = null, worstMap = null, mostPlayedMap = null;
+  let bestWinrate = -1, worstWinrate = 101, mostPlayed = -1;
+  mapStats.forEach(m => {
+    const played = Number(m.played) || 0;
+    const wins = Number(m.wins) || 0;
+    const losses = Number(m.losses) || 0;
+    const winrate = parseFloat((m.winrate||'').replace('%',''));
+    totalMatches += played;
+    totalWins += wins;
+    totalLosses += losses;
+    if (played > mostPlayed) { mostPlayed = played; mostPlayedMap = m.map; }
+    if (!isNaN(winrate) && played >= 5) {
+      if (winrate > bestWinrate) { bestWinrate = winrate; bestMap = m.map; }
+      if (winrate < worstWinrate) { worstWinrate = winrate; worstMap = m.map; }
+    }
+  });
+  let winrate = totalMatches > 0 ? ((totalWins / totalMatches) * 100).toFixed(1) + '%' : '';
+  let last10 = recentMatches.slice(0, 10);
+  let last10Wins = 0, last10Losses = 0;
+  last10.forEach(m => {
+    let score = m.score || '';
+    let [s1, s2] = score.split(':').map(s => parseInt(s.trim(), 10));
+    if (!isNaN(s1) && !isNaN(s2)) {
+      if ((m.team1 === name && s1 > s2) || (m.team2 === name && s2 > s1)) last10Wins++;
+      else last10Losses++;
+    }
+  });
+  // Son 10 maçta harita bazlı istatistikler
+  const last10Maps = {};
+  last10.forEach(m => {
+    if (m.maps && Array.isArray(m.maps)) {
+      m.maps.forEach(mapObj => {
+        const mapName = mapObj.name;
+        if (!mapName) return;
+        if (!last10Maps[mapName]) last10Maps[mapName] = { played: 0, wins: 0, losses: 0 };
+        last10Maps[mapName].played++;
+        // Takımın galip gelip gelmediğini bul
+        let score = m.score || '';
+        let [s1, s2] = score.split(':').map(s => parseInt(s.trim(), 10));
+        if (!isNaN(s1) && !isNaN(s2)) {
+          if ((m.team1 === name && s1 > s2) || (m.team2 === name && s2 > s1)) last10Maps[mapName].wins++;
+          else last10Maps[mapName].losses++;
+        }
+      });
+    }
+  });
+  let last10MostPlayedMap = null, last10BestMap = null, last10WorstMap = null;
+  let l10MostPlayed = -1, l10BestWinrate = -1, l10WorstWinrate = 101;
+  Object.entries(last10Maps).forEach(([map, obj]) => {
+    if (obj.played > l10MostPlayed) { l10MostPlayed = obj.played; last10MostPlayedMap = map; }
+    if (obj.played >= 2) {
+      let wr = obj.played > 0 ? (obj.wins / obj.played) * 100 : 0;
+      if (wr > l10BestWinrate) { l10BestWinrate = wr; last10BestMap = map; }
+      if (wr < l10WorstWinrate) { l10WorstWinrate = wr; last10WorstMap = map; }
+    }
+  });
+  const stats = {
+    totalMatches,
+    totalWins,
+    totalLosses,
+    winrate,
+    last10: { wins: last10Wins, losses: last10Losses },
+    mostPlayedMap,
+    bestMap,
+    worstMap,
+    last10MostPlayedMap,
+    last10BestMap,
+    last10WorstMap
+  };
   if (!name) return null;
   return {
     id: teamId,
@@ -152,7 +223,8 @@ getTeams.profile = async function(teamId) {
     roster,
     staff,
     totalWinnings,
-    recentMatches
+    recentMatches,
+    stats
   };
 };
 

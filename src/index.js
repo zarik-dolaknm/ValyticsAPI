@@ -280,24 +280,38 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *                 website: "https://fnatic.com"
  *                 twitter: "@FNATIC"
  *               roster:
- *                 - name: "Boaster"
+ *                 - id: "123"
+ *                   name: "Boaster"
  *                   realName: "Jake Howlett"
- *                 - name: "crashies"
+ *                   role: "player"
+ *                 - id: "124"
+ *                   name: "crashies"
  *                   realName: "Austin Roberts"
+ *                   role: "player"
  *               staff:
  *                 - name: "CoJo"
+ *                   realName: ""
  *                   role: "manager"
- *               recentResults:
+ *               recentMatches:
  *                 - event: "VCT 25: EMEA Stage 1 Playoffs"
  *                   opponent: "Team Heretics"
  *                   score: "3 : 0"
  *                   date: "2025/05/18"
- *               eventPlacements:
- *                 - event: "Champions Tour 2025: EMEA Stage 1"
- *                   placement: "1st"
- *                   prize: "$100,000"
- *                   year: "2025"
  *               totalWinnings: "$1,417,285"
+ *               stats:
+ *                 totalMatches: 120
+ *                 totalWins: 80
+ *                 totalLosses: 40
+ *                 winrate: "66.7%"
+ *                 last10:
+ *                   wins: 7
+ *                   losses: 3
+ *                 mostPlayedMap: "Ascent"
+ *                 bestMap: "Bind"
+ *                 worstMap: "Icebox"
+ *                 last10MostPlayedMap: "Lotus"
+ *                 last10BestMap: "Bind"
+ *                 last10WorstMap: "Split"
  *       404:
  *         description: Takım bulunamadı
  *       500:
