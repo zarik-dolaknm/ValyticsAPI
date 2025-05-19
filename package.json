@@ -1,7 +1,7 @@
 {
   "name": "vlr-api",
   "version": "1.0.0",
-  "description": "VLR.gg web scraping API",
+  "description": "ValyticsAPI",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

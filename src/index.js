@@ -7,7 +7,7 @@ const axiosRateLimit = require('axios-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
-const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams } = require('./utils');
+const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats } = require('./utils');
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
@@ -44,9 +44,9 @@ app.use(apiLimiter);
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
-    title: 'Valytics VLR.gg API',
+    title: 'ValyticsAPI',
     version: '1.0.0',
-    description: 'VLR.gg scraping API dokümantasyonu',
+    description: 'Valytics API dokümantasyonu',
   },
   servers: [
     {
@@ -445,6 +445,84 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: Hata
  */
 
+/**
+ * @swagger
+ * /api/players/{id}/advanced-stats:
+ *   get:
+ *     summary: Bir oyuncunun son X maçtaki gelişmiş istatistiklerini döndürür
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Oyuncu ID'si
+ *       - in: query
+ *         name: last
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: Son kaç maç alınacak
+ *     responses:
+ *       200:
+ *         description: Gelişmiş istatistikler
+ *         content:
+ *           application/json:
+ *             example:
+ *               playerId: "5568"
+ *               matchCount: 7
+ *               total:
+ *                 2K: 46
+ *                 3K: 9
+ *                 4K: 3
+ *                 5K: 1
+ *                 1v1: 2
+ *                 1v2: 2
+ *                 1v3: 1
+ *                 1v4: 0
+ *                 1v5: 0
+ *                 ECON: 313
+ *                 PL: 19
+ *                 DE: 7
+ *               average:
+ *                 2K: "6.57"
+ *                 3K: "1.29"
+ *                 4K: "0.43"
+ *                 5K: "0.14"
+ *                 1v1: "0.29"
+ *                 1v2: "0.29"
+ *                 1v3: "0.14"
+ *                 1v4: "0.00"
+ *                 1v5: "0.00"
+ *                 ECON: "44.71"
+ *                 PL: "2.71"
+ *                 DE: "1.00"
+ *                 opKills: "0.86"
+ *                 opDeaths: "1.14"
+ *                 fk: "7.71"
+ *                 fd: "6.00"
+ *               summary:
+ *                 opKills: 6
+ *                 opDeaths: 8
+ *                 fk: 54
+ *                 fd: 42
+ *               maps:
+ *                 - map: "Haven"
+ *                   matrixStats: { }
+ *                   advancedStats: { }
+ *                 - map: "Split"
+ *                   matrixStats: { }
+ *                   advancedStats: { }
+ *                 # ... diğer gerçek haritalar ...
+ *       500:
+ *         description: Hata
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: 'Failed to fetch advanced stats'
+ */
+
 // Ana endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -630,7 +708,11 @@ app.get('/api/players/:id', async (req, res) => {
     // console.log(`DEBUG: "/team/455" found in HTML: ${loudIdFound}`);
 
     // Oyuncu temel bilgileri
-    const playerName = $('.player-header .wf-title').text().trim(); // Oyuncu adı (büyük başlık)
+    const firstCard = $('a.wf-card.fc-flex.m-item').first();
+    console.log('[DEBUG] firstCard html:', firstCard.html());
+
+    let playerNameFromProfile = cleanText($('.player-header h1.wf-title').first().text()) 
+      || cleanText($('h1.wf-title').first().text());
     const realName = $('.player-header h2').text().trim(); // Gerçek adı
     const playerTag = $('.player-header .player-tag').text().trim(); // Oyuncu tagı (@...)
     // Ülke bilgisini bayrak class'ından çekelim
@@ -647,7 +729,7 @@ app.get('/api/players/:id', async (req, res) => {
 
     const playerDetails = {
       id: playerId,
-      name: playerName,
+      name: playerNameFromProfile,
       realName: realName,
       tag: playerTag,
       country: country,
@@ -769,69 +851,64 @@ app.get('/api/players/:id', async (req, res) => {
         if (DEBUG) console.log("Past teams container not found");
     }
 
-    // Son Maç Sonuçları
-    const recentResultsContainer = $('.wf-card.mod-recent-results');
-    if (recentResultsContainer.length > 0) {
-        if (DEBUG) console.log("Recent results container found.");
-        recentResultsContainer.find('.result-item').each((i, resultElement) => {
-            const eventName = $(resultElement).find('.event-name').text().trim();
-            const matchLink = $(resultElement).find('a').attr('href');
-            const matchId = matchLink ? matchLink.split('/')[1] : null;
-            const teams = $(resultElement).find('.match-item-vs-team');
-            const team1Name = $(teams).first().find('.text-of').text().trim();
-            const team2Name = $(teams).last().find('.text-of').text().trim();
-            const score = $(resultElement).find('.match-item-vs-score .score').text().trim();
-            const date = $(resultElement).find('.match-item-time').text().trim();
-
-            if (eventName && matchId) {
-                playerDetails.recentResults.push({
-                    eventName: eventName,
-                    matchId: matchId,
-                    team1: team1Name,
-                    team2: team2Name,
-                    score: score,
-                    date: date,
-                    url: matchLink ? `https://www.vlr.gg${matchLink}` : null
-                });
-            }
-        });
-    } else {
-         if (DEBUG) console.log("Recent results container not found.");
+    // Maç geçmişini çek
+    try {
+      const matchesUrl = `https://www.vlr.gg/player/matches/${playerId}/`;
+      const matchesRes = await http.get(matchesUrl);
+      const $$ = cheerio.load(matchesRes.data);
+      $$('.wf-card.fc-flex.m-item').each((i, el) => {
+        const matchLink = $$(el).attr('href');
+        const matchId = matchLink ? matchLink.split('/')[1] : null;
+        if (matchId) {
+          playerDetails.recentResults.push({
+            matchId,
+            url: `https://www.vlr.gg${matchLink}`
+            // istersen event, rakip, skor, tarih gibi alanları da ekle
+          });
+        }
+      });
+      if (DEBUG) console.log(`[DEBUG] recentResults from /player/matches/${playerId}/:`, playerDetails.recentResults);
+    } catch (err) {
+      if (DEBUG) console.log(`[DEBUG] Error fetching matches for player ${playerId}:`, err.message);
     }
 
     // Agent İstatistikleri - Tablo scrape etme
-    const agentStatsTable = $('.mod-dark.mod-table.wf-card table.wf-table');
+    const advStatsTables = $$('.wf-table-inset.mod-adv-stats, .mod-adv-stats');
 
-    if (agentStatsTable.length > 0) {
+    if (advStatsTables.length > 0) {
         if (DEBUG) console.log("Agent Stats Table found.");
         // tbody içindeki her bir satırı işle
-        agentStatsTable.find('tbody tr').each((i, rowElement) => {
-            const agentName = $(rowElement).find('td:nth-child(1) img').attr('alt');
-            const stats = {
-                use: $(rowElement).find('td:nth-child(2)').text().trim(),
-                rnd: $(rowElement).find('td:nth-child(3)').text().trim(),
-                rating: $(rowElement).find('td:nth-child(4)').text().trim(),
-                acs: $(rowElement).find('td:nth-child(5)').text().trim(),
-                kd: $(rowElement).find('td:nth-child(6)').text().trim(),
-                adr: $(rowElement).find('td:nth-child(7)').text().trim(),
-                kast: $(rowElement).find('td:nth-child(8)').text().trim(),
-                kpr: $(rowElement).find('td:nth-child(9)').text().trim(),
-                apr: $(rowElement).find('td:nth-child(10)').text().trim(),
-                fkpr: $(rowElement).find('td:nth-child(11)').text().trim(),
-                fdpr: $(rowElement).find('td:nth-child(12)').text().trim(),
-                kills: $(rowElement).find('td:nth-child(13)').text().trim(),
-                deaths: $(rowElement).find('td:nth-child(14)').text().trim(),
-                assists: $(rowElement).find('td:nth-child(15)').text().trim(),
-                fk: $(rowElement).find('td:nth-child(16)').text().trim(),
-                fd: $(rowElement).find('td:nth-child(17)').text().trim()
-            };
-            if(agentName) {
-                playerDetails.agentStats.push({
-                    agent: agentName,
-                    ...stats
-                });
-                if (DEBUG) console.log(`Added agent stats for: ${agentName}`);
-            }
+        advStatsTables.each((_, table) => {
+            $$(table).find('tr').each((__, row) => {
+                const playerCell = $$(row).find('td').eq(0);
+                const playerName = cleanText(playerCell.find('div').first().text());
+                console.log('[DEBUG] Table row playerName:', playerName);
+                const stats = {
+                    use: $$(row).find('td').eq(1).text().trim(),
+                    rnd: $$(row).find('td').eq(2).text().trim(),
+                    rating: $$(row).find('td').eq(3).text().trim(),
+                    acs: $$(row).find('td').eq(4).text().trim(),
+                    kd: $$(row).find('td').eq(5).text().trim(),
+                    adr: $$(row).find('td').eq(6).text().trim(),
+                    kast: $$(row).find('td').eq(7).text().trim(),
+                    kpr: $$(row).find('td').eq(8).text().trim(),
+                    apr: $$(row).find('td').eq(9).text().trim(),
+                    fkpr: $$(row).find('td').eq(10).text().trim(),
+                    fdpr: $$(row).find('td').eq(11).text().trim(),
+                    kills: $$(row).find('td').eq(12).text().trim(),
+                    deaths: $$(row).find('td').eq(13).text().trim(),
+                    assists: $$(row).find('td').eq(14).text().trim(),
+                    fk: $$(row).find('td').eq(15).text().trim(),
+                    fd: $$(row).find('td').eq(16).text().trim()
+                };
+                if(playerName) {
+                    playerDetails.agentStats.push({
+                        agent: playerName,
+                        ...stats
+                    });
+                    if (DEBUG) console.log(`Added agent stats for: ${playerName}`);
+                }
+            });
         });
     } else {
         if (DEBUG) console.log("Agent Stats Table not found.");
@@ -1066,6 +1143,20 @@ app.get('/api/search', async (req, res) => {
     res.json(result);
   } catch (err) {
     handleHttpError(res, err, 'Arama başarısız');
+  }
+});
+
+// Oyuncu gelişmiş istatistikleri endpoint
+app.get('/api/players/:id/advanced-stats', async (req, res) => {
+  const playerId = req.params.id;
+  try {
+    console.log('[DEBUG] getPlayerAdvancedStats FONKSİYONU ÇALIŞTI');
+    const last = req.query.last ? parseInt(req.query.last) : 5;
+    const result = await getPlayerAdvancedStats(playerId, last);
+    res.json(result);
+  } catch (error) {
+    console.error(`[ERROR][getPlayerAdvancedStats] playerId=${playerId}:`, error);
+    res.status(500).json({ error: 'Failed to fetch advanced stats' });
   }
 });
 

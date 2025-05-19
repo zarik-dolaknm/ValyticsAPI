@@ -286,6 +286,78 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         }
         ```
 
+### Oyuncu Gelişmiş İstatistikleri (Advanced Stats)
+
+-   `GET /api/players/:id/advanced-stats`
+    -   Belirli bir oyuncunun son X maçtaki gelişmiş istatistiklerini ve harita bazlı breakdown'larını döndürür.
+    -   **URL Parametreleri:**
+        -   `id` (gerekli): Oyuncu ID'si
+    -   **Query Parametreleri:**
+        -   `last` (isteğe bağlı): Son kaç maç alınacak (varsayılan: 5)
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "playerId": "5568",
+          "matchCount": 7,
+          "total": {
+            "2K": 46,
+            "3K": 9,
+            "4K": 3,
+            "5K": 1,
+            "1v1": 2,
+            "1v2": 2,
+            "1v3": 1,
+            "1v4": 0,
+            "1v5": 0,
+            "ECON": 313,
+            "PL": 19,
+            "DE": 7
+          },
+          "average": {
+            "2K": "6.57",
+            "3K": "1.29",
+            "4K": "0.43",
+            "5K": "0.14",
+            "1v1": "0.29",
+            "1v2": "0.29",
+            "1v3": "0.14",
+            "1v4": "0.00",
+            "1v5": "0.00",
+            "ECON": "44.71",
+            "PL": "2.71",
+            "DE": "1.00",
+            "opKills": "0.86",
+            "opDeaths": "1.14",
+            "fk": "7.71",
+            "fd": "6.00"
+          },
+          "summary": {
+            "opKills": 6,
+            "opDeaths": 8,
+            "fk": 54,
+            "fd": 42
+          },
+          "maps": [
+            {
+              "map": "Haven",
+              "matrixStats": { ... },
+              "advancedStats": { ... }
+            },
+            {
+              "map": "Split",
+              "matrixStats": { ... },
+              "advancedStats": { ... }
+            }
+            // ... diğer gerçek haritalar ...
+          ]
+        }
+        ```
+    -   **Açıklama:**
+        -   "maps" dizisinde sadece gerçek haritalar yer alır, "All Maps" yoktur.
+        -   "total" ve "average" alanları sadece gerçek haritaların toplamı ve ortalamasıdır.
+        -   "summary" ve "average" alanlarında opKills, opDeaths, fk, fd gibi özetler de bulunur.
+        -   Her harita için matrixStats ve advancedStats detayları döner.
+
 ### Yaklaşan Maçları Getirme
 
 -   `GET /api/matches/upcoming`

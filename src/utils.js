@@ -505,4 +505,329 @@ async function searchPlayersAndTeams(query) {
   return { players, teams };
 }
 
-module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams }; 
+/**
+ * Bir oyuncunun son X maçındaki gelişmiş istatistiklerini toplar.
+ * @param {string} playerId - Oyuncu ID'si
+ * @param {number} matchLimit - Son kaç maç alınacak
+ * @returns {Promise<Object>} - Toplam ve maç başına ortalama istatistikler
+ */
+async function getPlayerAdvancedStats(playerId, matchLimit = 5) {
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '').trim();
+  const mergeMatrixStats = (a, b) => {
+    const out = { normal: {}, fkfd: {}, op: {} };
+    for (const key of ['normal', 'fkfd', 'op']) {
+      out[key] = { ...a[key] };
+      for (const stat in b[key]) {
+        if (out[key][stat]) {
+          const aObj = out[key][stat];
+          const bObj = b[key][stat];
+          for (const subKey in bObj) {
+            if (subKey === 'diff') {
+              // diff: sum as number, keep sign
+              const aVal = parseInt(aObj[subKey]) || 0;
+              const bVal = parseInt(bObj[subKey]) || 0;
+              const sum = aVal + bVal;
+              aObj[subKey] = (sum >= 0 ? '+' : '') + sum.toString();
+            } else if (aObj[subKey] && !isNaN(Number(aObj[subKey])) && !isNaN(Number(bObj[subKey]))) {
+              aObj[subKey] = (Number(aObj[subKey]) + Number(bObj[subKey])).toString();
+            } else {
+              aObj[subKey] = bObj[subKey];
+            }
+          }
+        } else {
+          out[key][stat] = b[key][stat];
+        }
+      }
+    }
+    return out;
+  };
+  const mergeAdvancedStats = (a, b) => {
+    const out = { ...a };
+    for (const key in b) {
+      const aVal = out[key] || "0";
+      const bVal = b[key] || "0";
+      if (!isNaN(Number(aVal)) && !isNaN(Number(bVal))) {
+        out[key] = (Number(aVal) + Number(bVal)).toString();
+      } else {
+        out[key] = bVal;
+      }
+    }
+    return out;
+  };
+  const matchesUrl = `https://www.vlr.gg/player/matches/${playerId}/`;
+  let recentResults = [];
+  let playerNameFromProfile = null;
+  let playerTeamFromProfile = null;
+  try {
+    // Oyuncu adı ve takımını almak için önce oyuncu profil sayfasını çek
+    const profileRes = await http.get(`https://www.vlr.gg/player/${playerId}/`);
+    const profile$ = cheerio.load(profileRes.data);
+    playerNameFromProfile = cleanText(profile$('h1.wf-title').first().text());
+    playerTeamFromProfile = cleanText(profile$('.player-header .player-tag').first().text());
+    const matchesRes = await http.get(matchesUrl);
+    const $ = cheerio.load(matchesRes.data);
+    $('a.wf-card.fc-flex.m-item').each((i, el) => {
+      if (recentResults.length >= matchLimit) return;
+      const matchLink = $(el).attr('href');
+      const matchId = matchLink ? matchLink.split('/')[1] : null;
+      if (matchId) recentResults.push(matchId);
+    });
+    console.log(`[DEBUG] recentResults from /player/matches/${playerId}/:`, recentResults);
+    console.log(`[DEBUG] playerNameFromProfile: ${playerNameFromProfile}, playerTeamFromProfile: ${playerTeamFromProfile}`);
+  } catch (err) {
+    console.log(`[DEBUG] Error fetching matches/profile for player ${playerId}:`, err.message);
+  }
+  const statKeys = [
+    '2K', '3K', '4K', '5K',
+    '1v1', '1v2', '1v3', '1v4', '1v5',
+    'ECON', 'PL', 'DE'
+  ];
+  let totalRowsChecked = 0;
+  let totalRowsMatched = 0;
+  // Map bazlı istatistikler için dizi
+  const mapsStatsRaw = [];
+  for (const matchId of recentResults) {
+    try {
+      const matchRes = await http.get(`https://www.vlr.gg/${matchId}/?tab=performance`);
+      const $$ = cheerio.load(matchRes.data);
+      const normName = norm(playerNameFromProfile);
+      const normTag = norm(playerTeamFromProfile || '');
+      $$('.vm-stats-game').each((_, mapDiv) => {
+        const mapGameId = $$(mapDiv).attr('data-game-id');
+        let mapName = '';
+        const mapTab = $$('.js-map-switch[data-game-id="' + mapGameId + '"]');
+        if (mapTab.length > 0) {
+          mapName = cleanText(mapTab.text());
+        } else {
+          mapName = mapGameId;
+        }
+        // Map içindeki matrix tabloları
+        const mapMatrixStats = { normal: {}, fkfd: {}, op: {} };
+        const matrixTypes = [
+          { key: 'normal', selector: 'table.mod-matrix.mod-normal' },
+          { key: 'fkfd', selector: 'table.mod-matrix.mod-fkfd' },
+          { key: 'op', selector: 'table.mod-matrix.mod-op' }
+        ];
+        for (const { key, selector } of matrixTypes) {
+          const matrixTable = $$(mapDiv).find(selector);
+          if (matrixTable.length === 0) continue;
+          const rows = matrixTable.find('tr');
+          if (rows.length < 2) continue;
+          const headerRow = rows.first();
+          const playerHeaders = [];
+          headerRow.find('td').each((i, td) => {
+            if (i === 0) return;
+            const teamDiv = $$(td).find('.team > div').first();
+            let name = '';
+            let tag = '';
+            if (teamDiv.length > 0) {
+              name = cleanText(teamDiv.contents().filter(function() { return this.type === 'text'; }).text());
+              tag = cleanText(teamDiv.find('.team-tag.ge-text-faded').text());
+            }
+            playerHeaders.push({ name, tag });
+          });
+          let playerIdx = -1;
+          for (let idx = 0; idx < playerHeaders.length; idx++) {
+            const header = playerHeaders[idx];
+            if (
+              norm(header.name) === normName &&
+              playerTeamFromProfile && header.tag &&
+              norm(header.tag) === normTag
+            ) {
+              playerIdx = idx;
+              break;
+            }
+          }
+          if (playerIdx === -1) {
+            for (let idx = 0; idx < playerHeaders.length; idx++) {
+              const header = playerHeaders[idx];
+              if (norm(header.name) === normName) {
+                playerIdx = idx;
+                break;
+              }
+            }
+          }
+          if (playerIdx !== -1) {
+            rows.slice(1).each((rowIdx, tr) => {
+              const tds = $$(tr).find('td');
+              if (tds.length <= playerIdx + 1) return;
+              const rowTitle = cleanText($$(tds[0]).text());
+              if (!rowTitle) return;
+              const cell = $$(tds[playerIdx + 1]);
+              const values = cell.find('.stats-sq').map((i, el) => cleanText($$(el).text())).get();
+              let valueObj = null;
+              if (key === 'normal') {
+                if (values.length >= 3) {
+                  valueObj = { score: values[0], opponent: values[1], diff: values[2] };
+                } else if (values.length > 0) {
+                  valueObj = { values };
+                }
+              } else if (key === 'fkfd') {
+                if (values.length >= 3) {
+                  valueObj = { player: values[0], opponent: values[1], diff: values[2] };
+                } else if (values.length > 0) {
+                  valueObj = { values };
+                }
+              } else if (key === 'op') {
+                if (values.length >= 3) {
+                  valueObj = { player: values[0], opponent: values[1], diff: values[2] };
+                } else if (values.length > 0) {
+                  valueObj = { values };
+                }
+              }
+              if (valueObj && Object.values(valueObj).some(v => v && v !== '')) {
+                mapMatrixStats[key][rowTitle] = valueObj;
+              }
+            });
+          } else {
+            // Satır başlıklarında oyuncuyu ara
+            rows.slice(1).each((rowIdx, tr) => {
+              const tds = $$(tr).find('td');
+              if (tds.length < 2) return;
+              const teamDiv = $$(tds[0]).find('.team > div').first();
+              let rowName = '';
+              let rowTag = '';
+              if (teamDiv.length > 0) {
+                rowName = cleanText(teamDiv.contents().filter(function() { return this.type === 'text'; }).text());
+                rowTag = cleanText(teamDiv.find('.team-tag.ge-text-faded').text());
+              }
+              if (
+                (norm(rowName) === normName && norm(rowTag) === normTag) ||
+                (norm(rowName) === normName)
+              ) {
+                for (let colIdx = 1; colIdx < tds.length; colIdx++) {
+                  const header = playerHeaders[colIdx - 1];
+                  const colTitle = header.name + (header.tag ? ' ' + header.tag : '');
+                  const cell = $$(tds[colIdx]);
+                  const values = cell.find('.stats-sq').map((i, el) => cleanText($$(el).text())).get();
+                  let valueObj = null;
+                  if (key === 'normal') {
+                    if (values.length >= 3) {
+                      valueObj = { score: values[0], opponent: values[1], diff: values[2] };
+                    } else if (values.length > 0) {
+                      valueObj = { values };
+                    }
+                  } else if (key === 'fkfd') {
+                    if (values.length >= 3) {
+                      valueObj = { player: values[0], opponent: values[1], diff: values[2] };
+                    } else if (values.length > 0) {
+                      valueObj = { values };
+                    }
+                  } else if (key === 'op') {
+                    if (values.length >= 3) {
+                      valueObj = { player: values[0], opponent: values[1], diff: values[2] };
+                    } else if (values.length > 0) {
+                      valueObj = { values };
+                    }
+                  }
+                  if (valueObj && Object.values(valueObj).some(v => v && v !== '')) {
+                    mapMatrixStats[key][colTitle] = valueObj;
+                  }
+                }
+              }
+            });
+          }
+        }
+        // Map içindeki advanced stats tablosu
+        let mapAdvancedStats = null;
+        const advStatsTable = $$(mapDiv).find('table.mod-adv-stats');
+        if (advStatsTable.length > 0) {
+          const headers = advStatsTable.find('tr').first().find('th').map((i, th) => cleanText($$(th).text())).get();
+          advStatsTable.find('tr').slice(1).each((_, row) => {
+            const tds = $$(row).find('td');
+            if (tds.length < 2) return;
+            const teamDiv = $$(tds[0]).find('.team > div').first();
+            let rowName = '';
+            let rowTag = '';
+            if (teamDiv.length > 0) {
+              rowName = cleanText(teamDiv.contents().filter(function() { return this.type === 'text'; }).text());
+              rowTag = cleanText(teamDiv.find('.team-tag.ge-text-faded').text());
+            }
+            if (
+              (norm(rowName) === normName && norm(rowTag) === normTag) ||
+              (norm(rowName) === normName)
+            ) {
+              mapAdvancedStats = {};
+              for (let i = 2; i < tds.length; i++) {
+                const key = headers[i] || `col${i}`;
+                const val = cleanText($$(tds[i]).text());
+                // Sadece baştaki sayıyı al, yoksa "0"
+                const match = val.match(/^(\d+)/);
+                mapAdvancedStats[key] = match ? match[1] : "0";
+              }
+            }
+          });
+        }
+        mapsStatsRaw.push({ map: mapName, matrixStats: mapMatrixStats, advancedStats: mapAdvancedStats || {} });
+      });
+    } catch (err) {
+      continue;
+    }
+  }
+  // Aynı isimli map'leri birleştir (başındaki sayı ve boşlukları silerek)
+  const normalizeMapName = name => name ? name.replace(/^\d+\s*/, '').trim() : '';
+  const mapsStats = [];
+  for (const mapObj of mapsStatsRaw) {
+    const normName = normalizeMapName(mapObj.map);
+    const existing = mapsStats.find(m => normalizeMapName(m.map) === normName);
+    if (existing) {
+      existing.matrixStats = mergeMatrixStats(existing.matrixStats, mapObj.matrixStats);
+      existing.advancedStats = mergeAdvancedStats(existing.advancedStats, mapObj.advancedStats);
+    } else {
+      mapsStats.push({ ...mapObj, map: normName });
+    }
+  }
+  // Boş map'leri çıkar (hem matrixStats hem advancedStats boşsa) ve 'All Maps' olanı da çıkar
+  const filteredMaps = mapsStats.filter(map => {
+    const hasMatrix = map.matrixStats && (Object.values(map.matrixStats.normal).length > 0 || Object.values(map.matrixStats.fkfd).length > 0 || Object.values(map.matrixStats.op).length > 0);
+    const hasAdv = map.advancedStats && Object.values(map.advancedStats).some(v => v !== undefined && v !== null && v !== '' && v !== '0');
+    // 'All Maps' hariç tut
+    return (hasMatrix || hasAdv) && map.map.toLowerCase() !== 'all maps';
+  });
+  // --- MatrixStats'tan özet hesapla ---
+  let opKills = 0, opDeaths = 0, fk = 0, fd = 0;
+  // sumStats: filteredMaps üzerinden advancedStats değerlerini topla
+  const sumStats = {};
+  statKeys.forEach(k => sumStats[k] = 0);
+  filteredMaps.forEach(map => {
+    if (map.advancedStats) {
+      statKeys.forEach(k => {
+        const val = map.advancedStats[k];
+        if (!isNaN(Number(val))) sumStats[k] += Number(val);
+      });
+    }
+    if (map.matrixStats && map.matrixStats.op) {
+      Object.values(map.matrixStats.op).forEach(obj => {
+        if (obj && obj.player && !isNaN(Number(obj.player))) opKills += Number(obj.player);
+        if (obj && obj.opponent && !isNaN(Number(obj.opponent))) opDeaths += Number(obj.opponent);
+      });
+    }
+    if (map.matrixStats && map.matrixStats.fkfd) {
+      Object.values(map.matrixStats.fkfd).forEach(obj => {
+        if (obj && obj.player && !isNaN(Number(obj.player))) fk += Number(obj.player);
+        if (obj && obj.opponent && !isNaN(Number(obj.opponent))) fd += Number(obj.opponent);
+      });
+    }
+  });
+  // matchCount: non-empty maps
+  const matchCount = filteredMaps.length;
+  const summary = { opKills, opDeaths, fk, fd };
+  const avgStats = {};
+  statKeys.forEach(k => {
+    avgStats[k] = matchCount > 0 ? (sumStats[k] / matchCount).toFixed(2) : 0;
+  });
+  avgStats.opKills = matchCount > 0 ? (opKills / matchCount).toFixed(2) : 0;
+  avgStats.opDeaths = matchCount > 0 ? (opDeaths / matchCount).toFixed(2) : 0;
+  avgStats.fk = matchCount > 0 ? (fk / matchCount).toFixed(2) : 0;
+  avgStats.fd = matchCount > 0 ? (fd / matchCount).toFixed(2) : 0;
+  return {
+    playerId,
+    matchCount,
+    total: sumStats,
+    average: avgStats,
+    summary,
+    maps: filteredMaps
+  };
+}
+
+module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats }; 
