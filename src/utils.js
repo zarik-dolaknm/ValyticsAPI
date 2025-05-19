@@ -36,10 +36,10 @@ async function getEvents() {
   const $ = cheerio.load(response.data);
   const events = [];
   $('a.event-item.mod-flex.wf-card').each((i, eventElement) => {
-    const name = $(eventElement).find('.event-item-title').text().trim();
-    const status = $(eventElement).find('.event-item-desc-item-status').text().trim();
-    const prizePool = $(eventElement).find('.mod-prize').clone().children().remove().end().text().trim();
-    const dates = $(eventElement).find('.mod-dates').clone().children().remove().end().text().trim();
+    const name = cleanText($(eventElement).find('.event-item-title').text());
+    const status = cleanText($(eventElement).find('.event-item-desc-item-status').text());
+    const prizePool = cleanText($(eventElement).find('.mod-prize').clone().children().remove().end().text());
+    const dates = cleanText($(eventElement).find('.mod-dates').clone().children().remove().end().text());
     const regionFlagElement = $(eventElement).find('.mod-location i.flag[class*="mod-"]');
     let region = 'Unknown';
     if (regionFlagElement.length > 0) {
@@ -87,9 +87,9 @@ async function getTeams(region) {
   $('a.rank-item-team').each((i, el) => {
     const href = $(el).attr('href');
     const id = href ? href.split('/')[2] : null;
-    const name = $(el).find('img').attr('alt') || $(el).find('.ge-text').clone().children().remove().end().text().trim();
+    const name = cleanText($(el).find('img').attr('alt') || $(el).find('.ge-text').clone().children().remove().end().text());
     const logo = $(el).find('img').attr('src');
-    const country = $(el).find('.rank-item-team-country').text().trim();
+    const country = cleanText($(el).find('.rank-item-team-country').text());
     if (id && name) {
       teams.push({
         id,
@@ -109,18 +109,18 @@ getTeams.profile = async function(teamId) {
   const url = `https://www.vlr.gg/team/${teamId}/`;
   const response = await http.get(url);
   const $ = cheerio.load(response.data);
-  const name = $('h1').first().text().trim();
-  const tag = $('.team-header .team-header-tag').text().trim() || $('.team-header .wf-title-med').text().trim();
+  const name = cleanText($('h1').first().text());
+  const tag = cleanText($('.team-header .team-header-tag').text()) || cleanText($('.team-header .wf-title-med').text());
   const logo = $('.team-header img').attr('src');
-  const region = $('.team-header .team-header-country').text().trim() || $('.team-header .ge-text-light').text().trim();
+  const region = cleanText($('.team-header .team-header-country').text()) || cleanText($('.team-header .ge-text-light').text());
   const website = $('.team-header a[href^="https://"]').attr('href') || null;
-  const twitter = $('.team-header a[href*="twitter.com"]').text().trim() || null;
+  const twitter = cleanText($('.team-header a[href*="twitter.com"]').text()) || null;
   const roster = [];
   const staff = [];
   $('.team-roster-item').each((i, el) => {
-    const alias = $(el).find('.team-roster-item-name-alias').text().trim();
-    const realName = $(el).find('.team-roster-item-name-real').text().trim();
-    let role = $(el).find('.team-roster-item-name-role').first().text().trim();
+    const alias = cleanText($(el).find('.team-roster-item-name-alias').text());
+    const realName = cleanText($(el).find('.team-roster-item-name-real').text());
+    let role = cleanText($(el).find('.team-roster-item-name-role').first().text());
     const playerLink = $(el).find('a').attr('href');
     let playerId = null;
     if (playerLink && playerLink.startsWith('/player/')) {
@@ -175,11 +175,10 @@ getTeams.profile = async function(teamId) {
   last10.forEach(m => {
     if (m.maps && Array.isArray(m.maps)) {
       m.maps.forEach(mapObj => {
-        const mapName = mapObj.name;
+        const mapName = cleanText(mapObj.name);
         if (!mapName) return;
         if (!last10Maps[mapName]) last10Maps[mapName] = { played: 0, wins: 0, losses: 0 };
         last10Maps[mapName].played++;
-        // Takımın galip gelip gelmediğini bul
         let score = m.score || '';
         let [s1, s2] = score.split(':').map(s => parseInt(s.trim(), 10));
         if (!isNaN(s1) && !isNaN(s2)) {
@@ -238,25 +237,25 @@ async function getTeamMatches(teamId) {
     const matchId = matchLink ? matchLink.split('/')[1] : null;
     const url = matchLink ? `https://www.vlr.gg${matchLink}` : null;
     const eventDiv = $(el).find('.m-item-event');
-    const event = eventDiv.find('div').first().text().trim();
-    const stage = eventDiv.contents().filter(function() { return this.type === 'text'; }).text().trim();
+    const event = cleanText(eventDiv.find('div').first().text());
+    const stage = cleanText(eventDiv.contents().filter(function() { return this.type === 'text'; }).text());
     let eventFull = event;
     if (stage) {
       const cleanStage = stage.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
       eventFull = `${event} ${cleanStage}`.replace(/\s+⋅\s+/g, ' ⋅ ');
     }
-    const team1 = $(el).find('.m-item-team').first().find('.m-item-team-name').text().trim();
-    const team2 = $(el).find('.m-item-team').last().find('.m-item-team-name').text().trim();
+    const team1 = cleanText($(el).find('.m-item-team').first().find('.m-item-team-name').text());
+    const team2 = cleanText($(el).find('.m-item-team').last().find('.m-item-team-name').text());
     const scoreDiv = $(el).find('.m-item-result');
-    const score1 = scoreDiv.find('span').first().text().trim();
-    const score2 = scoreDiv.find('span').last().text().trim();
-    const date = $(el).find('.m-item-date div').first().text().trim();
+    const score1 = cleanText(scoreDiv.find('span').first().text());
+    const score2 = cleanText(scoreDiv.find('span').last().text());
+    const date = cleanText($(el).find('.m-item-date div').first().text());
     const maps = [];
     const gamesDiv = $(el).next('.mod-collapsed.m-item-games');
     if (gamesDiv.length > 0) {
       gamesDiv.find('.m-item-games-item').each((j, gameEl) => {
-        const mapName = $(gameEl).find('.map').text().trim();
-        const mapScore = $(gameEl).find('.score').text().replace(/\s+/g, '').replace(/-/g, '-').trim();
+        const mapName = cleanText($(gameEl).find('.map').text());
+        const mapScore = cleanText($(gameEl).find('.score').text().replace(/-/g, '-'));
         maps.push({ name: mapName, score: mapScore });
       });
     }
@@ -473,4 +472,37 @@ getTeams.agentStats = async function(teamId) {
   }));
 };
 
-module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches }; 
+async function searchPlayersAndTeams(query) {
+  const url = `https://www.vlr.gg/search/?q=${encodeURIComponent(query)}`;
+  const response = await http.get(url);
+  const $ = cheerio.load(response.data);
+  const players = [];
+  const teams = [];
+  $('a.search-item.wf-module-item').each((i, el) => {
+    const href = $(el).attr('href');
+    const img = $(el).find('img').attr('src');
+    const name = cleanText($(el).find('.search-item-title').text());
+    if (href && href.startsWith('/player/')) {
+      const id = href.split('/')[2];
+      const realName = cleanText($(el).find('.search-item-desc span').text());
+      players.push({
+        id,
+        name,
+        realName,
+        logo: img ? (img.startsWith('http') ? img : `https:${img}`) : null,
+        url: `https://www.vlr.gg${href}`
+      });
+    } else if (href && href.startsWith('/team/')) {
+      const id = href.split('/')[2];
+      teams.push({
+        id,
+        name,
+        logo: img ? (img.startsWith('http') ? img : `https:${img}`) : null,
+        url: `https://www.vlr.gg${href}`
+      });
+    }
+  });
+  return { players, teams };
+}
+
+module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams }; 

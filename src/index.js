@@ -7,7 +7,7 @@ const axiosRateLimit = require('axios-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
-const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches } = require('./utils');
+const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams } = require('./utils');
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
@@ -406,6 +406,41 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *                 teamAgentStats: { status: ok }
  *                 completedMatches: { status: ok }
  *                 matchDetails: { status: ok }
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/search:
+ *   get:
+ *     summary: Oyuncu ve takım araması yapar
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Aranacak metin
+ *     responses:
+ *       200:
+ *         description: Arama sonucu (oyuncular ve takımlar)
+ *         content:
+ *           application/json:
+ *             example:
+ *               players:
+ *                 - id: "3269"
+ *                   name: "Antidote"
+ *                   realName: "Sabyasachi Bose"
+ *                   logo: "https://owcdn.net/img/67cfba3fbd644.png"
+ *                   url: "https://www.vlr.gg/player/3269/antidote"
+ *               teams:
+ *                 - id: "11496"
+ *                   name: "ALTERNATE aTTaX Ruby"
+ *                   logo: "https://owcdn.net/img/62a1d1c3e765e.png"
+ *                   url: "https://www.vlr.gg/team/11496/alternate-attax-ruby"
+ *       400:
+ *         description: Eksik arama parametresi
  *       500:
  *         description: Hata
  */
@@ -1004,7 +1039,7 @@ app.get('/api/health', withCache('health', async (req, res) => {
     }
     try {
       const response = await http.get('https://www.vlr.gg/matches/results');
-      const $ = cheerio.load(response.data);
+    const $ = cheerio.load(response.data);
       const matchItems = $('.match-item');
       results.completedMatches = { status: matchItems.length > 0 ? 'ok' : 'fail' };
     } catch (e) {
@@ -1021,6 +1056,18 @@ app.get('/api/health', withCache('health', async (req, res) => {
     return { status: 'fail', results };
   }
 }, 60));
+
+// Search endpoint
+app.get('/api/search', async (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'Eksik arama parametresi (q)' });
+  try {
+    const result = await searchPlayersAndTeams(q);
+    res.json(result);
+  } catch (err) {
+    handleHttpError(res, err, 'Arama başarısız');
+  }
+});
 
 // 404 handler
 app.use((req, res) => {

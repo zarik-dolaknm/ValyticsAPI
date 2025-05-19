@@ -461,6 +461,38 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         }
         ```
 
+### Oyuncu ve Takım Arama
+
+-   `GET /api/search?q=arama`
+    -   Arama metnine göre hem oyuncu hem de takım araması yapar. Sonuçlar iki ayrı dizi olarak döner.
+    -   **Query Parametreleri:**
+        -   `q` (gerekli): Aranacak metin
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "players": [
+            {
+              "id": "3269",
+              "name": "Antidote",
+              "realName": "Sabyasachi Bose",
+              "logo": "https://owcdn.net/img/67cfba3fbd644.png",
+              "url": "https://www.vlr.gg/player/3269/antidote"
+            }
+          ],
+          "teams": [
+            {
+              "id": "11496",
+              "name": "ALTERNATE aTTaX Ruby",
+              "logo": "https://owcdn.net/img/62a1d1c3e765e.png",
+              "url": "https://www.vlr.gg/team/11496/alternate-attax-ruby"
+            }
+          ]
+        }
+        ```
+    -   **Açıklama:**
+        -   `players`: Sadece oyuncular (href /player/ ile başlar)
+        -   `teams`: Sadece takımlar (href /team/ ile başlar)
+
 ## Kullanılan Teknolojiler
 
 -   Node.js
