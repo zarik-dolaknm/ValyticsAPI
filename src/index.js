@@ -730,7 +730,6 @@ app.get('/api/players/:id', async (req, res) => {
       recentResults: [],
       currentTeams: [],
       pastTeams: [],
-      eventPlacements: [],
       totalWinnings: null
     };
 
@@ -872,31 +871,6 @@ app.get('/api/players/:id', async (req, res) => {
         });
     } else {
          if (DEBUG) console.log("Recent results container not found.");
-    }
-
-    // Etkinlik Dereceleri
-    const eventPlacementsContainer = $('.wf-card.mod-event-placements');
-    if (eventPlacementsContainer.length > 0) {
-         if (DEBUG) console.log("Event placements container found.");
-        eventPlacementsContainer.find('.ranking-item').each((i, placementElement) => {
-            const eventName = $(placementElement).find('.event-name').text().trim();
-            const placement = $(placementElement).find('.placement').text().trim();
-            const teamName = $(placementElement).find('.team-name').text().trim();
-            const year = $(placementElement).find('.event-year').text().trim();
-            const prize = $(placementElement).find('.prize').text().trim();
-
-            if (eventName && placement) {
-                playerDetails.eventPlacements.push({
-                    eventName: eventName,
-                    placement: placement,
-                    team: teamName,
-                    year: year,
-                    prize: prize
-                });
-            }
-        });
-    } else {
-         if (DEBUG) console.log("Event placements container not found.");
     }
 
     // Agent İstatistikleri - Tablo scrape etme
@@ -1094,6 +1068,66 @@ app.get('/api/teams', async (req, res) => {
   }
 });
 
+// Takım geçmiş maçlarını çeken yardımcı fonksiyon
+async function getTeamMatches(teamId) {
+  try {
+    const url = `https://www.vlr.gg/team/matches/${teamId}/`;
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+    const matches = [];
+    // Maç kartlarını yeni yapıya göre bul
+    $('a.fc-flex.wf-card.m-item').each((i, el) => {
+      const matchLink = $(el).attr('href');
+      const matchId = matchLink ? matchLink.split('/')[1] : null;
+      const url = matchLink ? `https://www.vlr.gg${matchLink}` : null;
+      // Event ve stage
+      const eventDiv = $(el).find('.m-item-event');
+      const event = eventDiv.find('div').first().text().trim();
+      const stage = eventDiv.contents().filter(function() { return this.type === 'text'; }).text().trim();
+      // Temiz birleştirme
+      let eventFull = event;
+      if (stage) {
+        // Boşluk, tab, satır başı karakterlerini temizle
+        const cleanStage = stage.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+        eventFull = `${event} ${cleanStage}`.replace(/\s+⋅\s+/g, ' ⋅ ');
+      }
+      // Takımlar ve skorlar
+      const team1 = $(el).find('.m-item-team').first().find('.m-item-team-name').text().trim();
+      const team2 = $(el).find('.m-item-team').last().find('.m-item-team-name').text().trim();
+      const scoreDiv = $(el).find('.m-item-result');
+      const score1 = scoreDiv.find('span').first().text().trim();
+      const score2 = scoreDiv.find('span').last().text().trim();
+      // Tarih
+      const date = $(el).find('.m-item-date div').first().text().trim();
+      // Haritalar (altındaki .m-item-games-item'lar)
+      const maps = [];
+      // Her maç kartının hemen ardından gelen .mod-collapsed.m-item-games divini bul
+      const gamesDiv = $(el).next('.mod-collapsed.m-item-games');
+      if (gamesDiv.length > 0) {
+        gamesDiv.find('.m-item-games-item').each((j, gameEl) => {
+          const mapName = $(gameEl).find('.map').text().trim();
+          const mapScore = $(gameEl).find('.score').text().replace(/\s+/g, '').replace(/-/g, '-').trim();
+          maps.push({ name: mapName, score: mapScore });
+        });
+      }
+      matches.push({
+        id: matchId,
+        team1,
+        team2,
+        score: `${score1} : ${score2}`,
+        date,
+        event: eventFull,
+        maps,
+        url
+      });
+    });
+    return matches;
+  } catch (err) {
+    console.error('[ERROR] Takım geçmiş maçları çekilemedi:', err.message);
+    return [];
+  }
+}
+
 app.get('/api/teams/:id', async (req, res) => {
   const teamId = req.params.id;
   try {
@@ -1132,26 +1166,6 @@ app.get('/api/teams/:id', async (req, res) => {
       }
     });
 
-    // Son maçlar
-    const recentResults = [];
-    $('.wf-card:contains("Recent Results") .match-item').each((i, el) => {
-      const event = $(el).find('.match-item-event').text().trim();
-      const opponent = $(el).find('.match-item-vs-team-name').last().text().trim();
-      const score = $(el).find('.match-item-vs-team-score').first().text().trim() + ' : ' + $(el).find('.match-item-vs-team-score').last().text().trim();
-      const date = $(el).find('.match-item-time').text().trim();
-      if (event && opponent) recentResults.push({ event, opponent, score, date });
-    });
-
-    // Event dereceleri
-    const eventPlacements = [];
-    $('.wf-card:contains("Event Placements") .event-placement-item').each((i, el) => {
-      const event = $(el).find('.event-placement-event').text().trim();
-      const placement = $(el).find('.event-placement-place').text().trim();
-      const prize = $(el).find('.event-placement-prize').text().trim();
-      const year = $(el).find('.event-placement-year').text().trim();
-      if (event && placement) eventPlacements.push({ event, placement, prize, year });
-    });
-
     // Toplam kazanç
     let totalWinnings = null;
     const winningsRaw = $('.wf-card:contains("Total Winnings") span').text();
@@ -1160,6 +1174,9 @@ app.get('/api/teams/:id', async (req, res) => {
       const match = winningsRaw.match(/\$[\d,]+/);
       if (match) totalWinnings = match[0];
     }
+
+    // Takım geçmiş maçları (recentMatches)
+    const recentMatches = await getTeamMatches(teamId);
 
     // Sonuç
     if (!name) return res.status(404).json({ error: 'Takım bulunamadı' });
@@ -1172,9 +1189,8 @@ app.get('/api/teams/:id', async (req, res) => {
       socials: { website, twitter },
       roster,
       staff,
-      recentResults,
-      eventPlacements,
-      totalWinnings
+      totalWinnings,
+      recentMatches
     });
   } catch (error) {
     console.error('[ERROR] Fetching team profile failed:', error);
