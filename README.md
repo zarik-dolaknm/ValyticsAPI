@@ -287,6 +287,62 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         }
         ```
 
+### Yaklaşan Maçları Getirme
+
+-   `GET /api/matches/upcoming`
+    -   Sadece status'u "Upcoming" olan yaklaşan maçları döndürür.
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "total": 2,
+          "matches": [
+            {
+              "id": "484663",
+              "teams": {
+                "team1": { "name": "Velocity Gaming", "score": "–" },
+                "team2": { "name": "Reckoning Esports", "score": "–" }
+              },
+              "event": "Challengers League 2025 South Asia: Split 2",
+              "stage": "Main Event–Upper Semifinals",
+              "date": "12:30 PM",
+              "status": "Upcoming",
+              "eta": "50m",
+              "icon": "https://owcdn.net/img/6009f963577f4.png",
+              "url": "https://www.vlr.gg/484663/velocity-gaming-vs-reckoning-esports-challengers-league-2025-south-asia-split-2-ubsf"
+            }
+            // ... diğer upcoming maçlar ...
+          ]
+        }
+        ```
+
+### Canlı Maçları Getirme
+
+-   `GET /api/matches/live`
+    -   Sadece status'u "LIVE" olan şu anda oynanan maçları döndürür.
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "total": 1,
+          "matches": [
+            {
+              "id": "484641",
+              "teams": {
+                "team1": { "name": "DRX Academy", "score": "0" },
+                "team2": { "name": "Gen.G Global Academy", "score": "0" }
+              },
+              "event": "WDG Challengers League 2025 Korea: Stage 2",
+              "stage": "Playoffs–Upper Round 1",
+              "date": "11:00 AM",
+              "status": "LIVE",
+              "eta": "",
+              "icon": "https://owcdn.net/img/6009f963577f4.png",
+              "url": "https://www.vlr.gg/484641/drx-academy-vs-gen-g-global-academy-wdg-challengers-league-2025-korea-stage-2-ur1"
+            }
+            // ... diğer canlı maçlar ...
+          ]
+        }
+        ```
+
 ## Kullanılan Teknolojiler
 
 -   Node.js

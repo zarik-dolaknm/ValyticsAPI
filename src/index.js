@@ -163,6 +163,62 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: Hata
  */
 
+/**
+ * @openapi
+ * /api/matches/upcoming:
+ *   get:
+ *     summary: Yaklaşan (Upcoming) Valorant maçlarını getirir
+ *     responses:
+ *       200:
+ *         description: Sadece upcoming (yaklaşan) maçlar listesi
+ *         content:
+ *           application/json:
+ *             example:
+ *               total: 2
+ *               matches:
+ *                 - id: "484663"
+ *                   teams:
+ *                     team1: { name: "Velocity Gaming", score: "–" }
+ *                     team2: { name: "Reckoning Esports", score: "–" }
+ *                   event: "Challengers League 2025 South Asia: Split 2"
+ *                   stage: "Main Event–Upper Semifinals"
+ *                   date: "12:30 PM"
+ *                   status: "Upcoming"
+ *                   eta: "50m"
+ *                   icon: "https://owcdn.net/img/6009f963577f4.png"
+ *                   url: "https://www.vlr.gg/484663/velocity-gaming-vs-reckoning-esports-challengers-league-2025-south-asia-split-2-ubsf"
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/matches/live:
+ *   get:
+ *     summary: Şu anda canlı (LIVE) oynanan Valorant maçlarını getirir
+ *     responses:
+ *       200:
+ *         description: Sadece canlı (live) maçlar listesi
+ *         content:
+ *           application/json:
+ *             example:
+ *               total: 1
+ *               matches:
+ *                 - id: "484641"
+ *                   teams:
+ *                     team1: { name: "DRX Academy", score: "0" }
+ *                     team2: { name: "Gen.G Global Academy", score: "0" }
+ *                   event: "WDG Challengers League 2025 Korea: Stage 2"
+ *                   stage: "Playoffs–Upper Round 1"
+ *                   date: "11:00 AM"
+ *                   status: "LIVE"
+ *                   eta: ""
+ *                   icon: "https://owcdn.net/img/6009f963577f4.png"
+ *                   url: "https://www.vlr.gg/484641/drx-academy-vs-gen-g-global-academy-wdg-challengers-league-2025-korea-stage-2-ur1"
+ *       500:
+ *         description: Hata
+ */
+
 // Ana endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -171,7 +227,8 @@ app.get('/', (req, res) => {
       matches: '/api/matches',
       matchDetails: '/api/matches/:id',
       eventMatches: '/api/events/:eventId/matches',
-      completedMatches: '/api/matches/completed'
+      completedMatches: '/api/matches/completed',
+      upcomingMatches: '/api/matches/upcoming'
     }
   });
 });
@@ -456,8 +513,8 @@ app.get('/api/events/:eventId/matches', async (req, res) => {
   }
 });
 
-// Maç detaylarını getiren endpoint
-app.get('/api/matches/:id', async (req, res) => {
+// Sadece sayısal id'ler için maç detay endpointi
+app.get('/api/matches/:id(\\d+)', async (req, res) => {
   try {
     const matchId = req.params.id;
     const matchDetails = await getMatchDetails(matchId);
@@ -796,6 +853,98 @@ app.get('/api/players/:id', async (req, res) => {
   } catch (error) {
     console.error(`Error fetching player details for ${playerId}:`, error);
     res.status(500).json({ error: 'Failed to fetch player details' });
+  }
+});
+
+// Yaklaşan ve canlı maçları getiren endpoint (tümünü döndürür)
+app.get('/api/matches/upcoming', async (req, res) => {
+  try {
+    const response = await http.get('https://www.vlr.gg/matches');
+    const $ = cheerio.load(response.data);
+    const matches = [];
+    $('.match-item').each((i, matchElement) => {
+      const matchLink = $(matchElement).attr('href');
+      const matchId = matchLink ? matchLink.split('/')[1] : null;
+      const team1Name = cleanText($(matchElement).find('.match-item-vs-team-name').first().text());
+      const team2Name = cleanText($(matchElement).find('.match-item-vs-team-name').last().text());
+      const team1Score = cleanText($(matchElement).find('.match-item-vs-team-score').first().text());
+      const team2Score = cleanText($(matchElement).find('.match-item-vs-team-score').last().text());
+      const event = cleanText($(matchElement).find('.match-item-event').clone().children('.match-item-event-series').remove().end().text());
+      const stage = cleanText($(matchElement).find('.match-item-event-series').text());
+      const date = cleanText($(matchElement).find('.match-item-time').text());
+      const status = cleanText($(matchElement).find('.ml-status').text());
+      const eta = cleanText($(matchElement).find('.ml-eta').text());
+      const icon = $(matchElement).find('.match-item-icon img').attr('src');
+      matches.push({
+        id: matchId,
+        teams: {
+          team1: { name: team1Name, score: team1Score },
+          team2: { name: team2Name, score: team2Score }
+        },
+        event: event,
+        stage: stage,
+        date: date,
+        status: status,
+        eta: eta,
+        icon: icon ? `https://owcdn.net${icon}` : null,
+        url: matchLink ? `https://www.vlr.gg${matchLink}` : null
+      });
+    });
+    // Sadece Upcoming olanları döndür
+    const upcomingMatches = matches.filter(m => m.status.toLowerCase() === 'upcoming');
+    res.json({
+      total: upcomingMatches.length,
+      matches: upcomingMatches
+    });
+  } catch (error) {
+    console.error('[ERROR] Fetching upcoming matches failed:', error);
+    res.status(500).json({ error: 'Failed to fetch upcoming matches' });
+  }
+});
+
+// Canlı maçları getiren endpoint
+app.get('/api/matches/live', async (req, res) => {
+  try {
+    const response = await http.get('https://www.vlr.gg/matches');
+    const $ = cheerio.load(response.data);
+    const matches = [];
+    $('.match-item').each((i, matchElement) => {
+      const matchLink = $(matchElement).attr('href');
+      const matchId = matchLink ? matchLink.split('/')[1] : null;
+      const team1Name = cleanText($(matchElement).find('.match-item-vs-team-name').first().text());
+      const team2Name = cleanText($(matchElement).find('.match-item-vs-team-name').last().text());
+      const team1Score = cleanText($(matchElement).find('.match-item-vs-team-score').first().text());
+      const team2Score = cleanText($(matchElement).find('.match-item-vs-team-score').last().text());
+      const event = cleanText($(matchElement).find('.match-item-event').clone().children('.match-item-event-series').remove().end().text());
+      const stage = cleanText($(matchElement).find('.match-item-event-series').text());
+      const date = cleanText($(matchElement).find('.match-item-time').text());
+      const status = cleanText($(matchElement).find('.ml-status').text());
+      const eta = cleanText($(matchElement).find('.ml-eta').text());
+      const icon = $(matchElement).find('.match-item-icon img').attr('src');
+      matches.push({
+        id: matchId,
+        teams: {
+          team1: { name: team1Name, score: team1Score },
+          team2: { name: team2Name, score: team2Score }
+        },
+        event: event,
+        stage: stage,
+        date: date,
+        status: status,
+        eta: eta,
+        icon: icon ? `https://owcdn.net${icon}` : null,
+        url: matchLink ? `https://www.vlr.gg${matchLink}` : null
+      });
+    });
+    // Sadece LIVE olanları döndür
+    const liveMatches = matches.filter(m => m.status.toLowerCase() === 'live');
+    res.json({
+      total: liveMatches.length,
+      matches: liveMatches
+    });
+  } catch (error) {
+    console.error('[ERROR] Fetching live matches failed:', error);
+    res.status(500).json({ error: 'Failed to fetch live matches' });
   }
 });
 
