@@ -7,6 +7,7 @@ const axiosRateLimit = require('axios-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
+const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches } = require('./utils');
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
@@ -38,11 +39,6 @@ const http = axiosRateLimit(axios.create({
 app.use(cors());
 app.use(express.json());
 app.use(apiLimiter);
-
-// Temizleme fonksiyonu
-function cleanText(text) {
-  return text.replace(/\s+/g, ' ').trim();
-}
 
 // Swagger/OpenAPI ayarları
 const swaggerDefinition = {
@@ -378,31 +374,24 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 /**
  * @openapi
- * /api/events/{eventId}/agents-stats:
+ * /api/health:
  *   get:
- *     summary: Belirli bir etkinliğin harita ve ajan istatistiklerini getirir
- *     parameters:
- *       - in: path
- *         name: eventId
- *         required: true
- *         schema:
- *           type: string
- *         description: Etkinlik ID
+ *     summary: API sağlık kontrolü (ana fonksiyonların çalışırlığını topluca test eder)
  *     responses:
  *       200:
- *         description: Harita ve ajan istatistikleri
+ *         description: Sağlık durumu ve test sonuçları
  *         content:
  *           application/json:
  *             example:
- *               - map: "Split"
- *                 played: 20
- *                 attackWinrate: "47%"
- *                 defenseWinrate: "53%"
- *                 agents:
- *                   - agent: "Omen"
- *                     pickrate: "68%"
- *                   - agent: "Tejo"
- *                     pickrate: "38%"
+ *               status: ok
+ *               results:
+ *                 events: { status: ok, count: 20 }
+ *                 teams: { status: ok, count: 30 }
+ *                 teamProfile: { status: ok }
+ *                 teamMapStats: { status: ok }
+ *                 teamAgentStats: { status: ok }
+ *                 completedMatches: { status: ok }
+ *                 matchDetails: { status: ok }
  *       500:
  *         description: Hata
  */
@@ -479,163 +468,6 @@ app.get('/api/matches/completed', async (req, res) => {
   }
 });
 
-// Maç detaylarını çeken yardımcı fonksiyon
-async function getMatchDetails(matchId) {
-  try {
-    const response = await http.get(`https://www.vlr.gg/${matchId}`);
-    const $ = cheerio.load(response.data);
-
-    // !!! DEBUG: Çekilen tüm HTML içinde "LOUD" kelimesini ara
-    // const htmlContent = response.data;
-    // const loudFound = htmlContent.includes('LOUD');
-    // const loudIdFound = htmlContent.includes('/team/455');
-    // console.log(`DEBUG: "LOUD" found in HTML: ${loudFound}`);
-    // console.log(`DEBUG: "/team/455" found in HTML: ${loudIdFound}`);
-
-    // Takım isimleri ve skorlar - Güncellenmiş selector'ler
-    const team1Name = $('.match-header-vs .match-header-link.mod-1 .wf-title-med').text().trim();
-    const team2Name = $('.match-header-vs .match-header-link.mod-2 .wf-title-med').text().trim();
-    const team1Score = $('.match-header-vs-score .match-header-vs-score-winner').text().trim(); // Kazanan skoru
-    const team2Score = $('.match-header-vs-score .match-header-vs-score-loser').text().trim(); // Kaybeden skoru
-
-    // Raw textleri alıp temizleyelim
-    const rawSeriesText = $('.match-header-event-series').text();
-    const cleanedSeries = rawSeriesText.replace(/\s+/g, ' ').trim();
-
-    const rawDateText = $('.match-header-date').text();
-    const cleanedDate = rawDateText.replace(/\s+/g, ' ').trim();
-
-    const matchDetails = {
-      id: matchId,
-      teams: {
-        team1: { name: team1Name, score: team1Score }, // Güncellenmiş team1
-        team2: { name: team2Name, score: team2Score }  // Güncellenmiş team2
-      },
-      status: $('.match-header-status').text().trim(),
-      event: {
-        name: $('.match-header-event-name').text().trim(),
-        series: cleanedSeries
-      },
-      date: cleanedDate,
-      maps: []
-    };
-
-    // Map başlıklarını çek ve maps dizisine ekle
-    $('.vm-stats-game-header').each((i, mapHeader) => {
-      const rawMapText = $(mapHeader).find('.map').text();
-      const cleanedMapText = rawMapText.replace(/\s+/g, ' ').trim();
-      const mapName = cleanedMapText.split('PICK')[0].trim();
-
-      const mapScore = $(mapHeader).find('.score').text().trim();
-      const mapDuration = $(mapHeader).find('.map-duration').text().trim();
-
-      matchDetails.maps.push({
-        name: mapName,
-        score: mapScore,
-        duration: mapDuration,
-        players: []
-      });
-    });
-
-    if (DEBUG) console.log('Initial maps array based on headers:', matchDetails.maps.length);
-
-    // Tüm oyuncu istatistik tablolarını çek
-    const allTables = $('table.wf-table-inset');
-    const playerStatTables = allTables.filter('.mod-overview');
-
-    if (DEBUG) console.log('Total .wf-table-inset tables found:', allTables.length);
-    if (DEBUG) console.log('Total .wf-table-inset.mod-overview tables found:', playerStatTables.length);
-
-    // Her tabloyi işle ve eğer player içeriyorsa ilgili mape ekle
-    let mapIndex = 0;
-    playerStatTables.each((i, playerTableElement) => {
-      const playerRows = $(playerTableElement).find('tbody tr');
-      if (DEBUG) console.log(`Processing Table #${i + 1}. Found ${playerRows.length} player rows.`);
-
-      if (playerRows.length > 0 && mapIndex < matchDetails.maps.length) {
-        if (DEBUG) console.log(`Attempting to add players from Table #${i + 1} to Map: ${matchDetails.maps[mapIndex].name}`);
-        const players = [];
-
-        playerRows.each((j, playerRow) => {
-            // Oyuncu bilgilerini çek
-            const playerName = $(playerRow).find('.mod-player .text-of').text().trim();
-            const agent = $(playerRow).find('.mod-agents img').attr('alt');
-            const teamName = $(playerRow).find('.mod-player .ge-text-light').text().trim();
-
-            // Player ID ve URL'yi çek
-            const playerLinkElement = $(playerRow).find('.mod-player a');
-            const playerHref = playerLinkElement.attr('href');
-            const playerId = playerHref ? playerHref.split('/')[2] : null;
-            const playerUrl = playerHref ? `https://www.vlr.gg${playerHref}` : null;
-
-            const stats = {
-                team: teamName || 'Unknown Team',
-                name: playerName,
-                agent: agent,
-                acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-both').text().trim(),
-                kills: $(playerRow).find('.mod-vlr-kills .side.mod-both').text().trim(),
-                deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-both').text().replace(/\//g, '').trim(),
-                assists: $(playerRow).find('.mod-vlr-assists .side.mod-both').text().trim(),
-                kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-both').text().trim(),
-                adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-both').text().trim(),
-                hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-both').text().trim(),
-                fk: $(playerRow).find('.mod-fb .side.mod-both').text().trim(),
-                fd: $(playerRow).find('.mod-fd .side.mod-both').text().trim(),
-                plusMinus: $(playerRow).find('.mod-kd-diff .side.mod-both').text().trim(),
-                fkFd: $(playerRow).find('.mod-fk-diff .side.mod-both').text().trim(),
-                clutch: 'N/A'
-            };
-
-            const roundStats = {
-                attack: {
-                    acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-t').text().trim(),
-                    kills: $(playerRow).find('.mod-vlr-kills .side.mod-t').text().trim(),
-                    deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-t').text().trim(),
-                    assists: $(playerRow).find('.mod-vlr-assists .side.mod-t').text().trim(),
-                    kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-t').text().trim(),
-                    adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-t').text().trim(),
-                    hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-t').text().trim()
-                },
-                defense: {
-                    acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-ct').text().trim(),
-                    kills: $(playerRow).find('.mod-vlr-kills .side.mod-ct').text().trim(),
-                    deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-ct').text().trim(),
-                    assists: $(playerRow).find('.mod-vlr-assists .side.mod-ct').text().trim(),
-                    kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-ct').text().trim(),
-                    adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-ct').text().trim(),
-                    hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-ct').text().trim()
-                }
-            };
-
-            players.push({
-                ...stats,
-                roundStats,
-                playerId,
-                playerUrl
-            });
-        });
-        matchDetails.maps[mapIndex].players = players;
-        if (DEBUG) console.log(`Added ${players.length} players to Map: ${matchDetails.maps[mapIndex].name}`);
-        mapIndex++;
-      } else {
-          if (DEBUG) console.log(`Skipping Table #${i + 1}. No player rows found or no more maps to add players to.`);
-      }
-    });
-
-    // Ek bilgiler
-    matchDetails.additionalInfo = {
-      patch: $('.match-header-patch').text().trim(),
-      vod: $('.match-vod-link').attr('href'),
-      streams: $('.match-streams a').map((i, el) => $(el).attr('href')).get()
-    };
-
-    return matchDetails;
-  } catch (error) {
-    console.error(`Error fetching match details for ${matchId}:`, error);
-    return null;
-  }
-}
-
 // Event maçlarını getiren endpoint
 app.get('/api/events/:eventId/matches', async (req, res) => {
   try {
@@ -706,74 +538,20 @@ app.get('/api/matches/:id(\\d+)', async (req, res) => {
   try {
     const matchId = req.params.id;
     const matchDetails = await getMatchDetails(matchId);
-    
-    if (!matchDetails) {
-      return res.status(404).json({ error: 'Match not found' });
-    }
-
+    if (!matchDetails) return res.status(404).json({ error: 'Match not found' });
     res.json(matchDetails);
   } catch (error) {
-    console.error('Error fetching match details:', error);
-    res.status(500).json({ error: 'Failed to fetch match details' });
+    handleHttpError(res, error, 'Failed to fetch match details');
   }
 });
 
 // Event listesini getiren endpoint
 app.get('/api/events', async (req, res) => {
   try {
-    const response = await http.get('https://www.vlr.gg/events');
-    const $ = cheerio.load(response.data);
-
-    const events = [];
-
-    // Etkinlik öğeleri ana a etiketleri içinde
-    const eventItems = $('a.event-item.mod-flex.wf-card');
-
-    if (DEBUG) console.log(`Found ${eventItems.length} event items.`);
-
-    eventItems.each((i, eventElement) => {
-      // Her etkinlik elementinden bilgileri çekelim - Güncellenmiş selector'ler
-      const name = $(eventElement).find('.event-item-title').text().trim();
-      const status = $(eventElement).find('.event-item-desc-item-status').text().trim();
-      const prizePool = $(eventElement).find('.mod-prize').clone().children().remove().end().text().trim();
-      const dates = $(eventElement).find('.mod-dates').clone().children().remove().end().text().trim();
-
-      // Bölgeyi class attribute'undan çekelim - Yeni Logic
-      const regionFlagElement = $(eventElement).find('.mod-location i.flag[class*="mod-"]');
-      let region = 'Unknown'; // Varsayılan değer
-      if (regionFlagElement.length > 0) {
-          const classAttr = regionFlagElement.attr('class');
-          const modClass = classAttr.split(' ').find(cls => cls.startsWith('mod-'));
-          if (modClass) {
-              region = modClass.replace('mod-', '').toUpperCase(); // 'mod-' kısmını çıkarıp büyük harf yap
-          }
-      }
-
-      const href = $(eventElement).attr('href');
-      const url = href ? `https://www.vlr.gg${href}` : null;
-      const id = href ? href.split('/')[2] : null;
-
-      if (name) {
-         events.push({
-          id: id,
-          name: name,
-          status: status,
-          prizePool: prizePool,
-          dates: dates,
-          region: region, // Güncellenmiş region
-          url: url
-        });
-      } else {
-          if (DEBUG) console.log(`Skipping event item ${i}: Could not find name.`);
-      }
-
-    });
-
+    const events = await withCache('events', getEvents)();
     res.json(events);
-
   } catch (error) {
-    console.error('Error fetching event list:', error);
-    res.status(500).json({ error: 'Failed to fetch event list' });
+    handleHttpError(res, error, 'Failed to fetch event list');
   }
 });
 
@@ -1136,283 +914,99 @@ const REGION_URLS = {
 
 app.get('/api/teams', async (req, res) => {
   const region = req.query.region;
-  if (!region || !REGION_URLS[region]) {
-    return res.status(400).json({ error: 'Geçersiz veya eksik region parametresi', supported: Object.keys(REGION_URLS) });
+  if (!region || !getTeams.regionSupported(region)) {
+    return res.status(400).json({ error: 'Geçersiz veya eksik region parametresi', supported: getTeams.supportedRegions() });
   }
   try {
-    const url = REGION_URLS[region];
-    const response = await http.get(url);
-    const $ = cheerio.load(response.data);
-    const teams = [];
-    $('a.rank-item-team').each((i, el) => {
-      const href = $(el).attr('href');
-      const id = href ? href.split('/')[2] : null;
-      const name = $(el).find('img').attr('alt') || $(el).find('.ge-text').clone().children().remove().end().text().trim();
-      const logo = $(el).find('img').attr('src');
-      const country = $(el).find('.rank-item-team-country').text().trim();
-      if (id && name) {
-        teams.push({
-          id,
-          name,
-          logo: logo ? `https://owcdn.net${logo}` : null,
-          url: href ? `https://www.vlr.gg${href}` : null,
-          country
-        });
-      }
-    });
+    const teams = await withCache(`teams_${region}`, () => getTeams(region))();
     res.json({ region, total: teams.length, teams });
   } catch (error) {
-    console.error('[ERROR] Fetching teams failed:', error);
-    res.status(500).json({ error: 'Failed to fetch teams' });
+    handleHttpError(res, error, 'Failed to fetch teams');
   }
 });
-
-// Takım geçmiş maçlarını çeken yardımcı fonksiyon
-async function getTeamMatches(teamId) {
-  try {
-    const url = `https://www.vlr.gg/team/matches/${teamId}/`;
-    const response = await http.get(url);
-    const $ = cheerio.load(response.data);
-    const matches = [];
-    // Maç kartlarını yeni yapıya göre bul
-    $('a.fc-flex.wf-card.m-item').each((i, el) => {
-      const matchLink = $(el).attr('href');
-      const matchId = matchLink ? matchLink.split('/')[1] : null;
-      const url = matchLink ? `https://www.vlr.gg${matchLink}` : null;
-      // Event ve stage
-      const eventDiv = $(el).find('.m-item-event');
-      const event = eventDiv.find('div').first().text().trim();
-      const stage = eventDiv.contents().filter(function() { return this.type === 'text'; }).text().trim();
-      // Temiz birleştirme
-      let eventFull = event;
-      if (stage) {
-        // Boşluk, tab, satır başı karakterlerini temizle
-        const cleanStage = stage.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-        eventFull = `${event} ${cleanStage}`.replace(/\s+⋅\s+/g, ' ⋅ ');
-      }
-      // Takımlar ve skorlar
-      const team1 = $(el).find('.m-item-team').first().find('.m-item-team-name').text().trim();
-      const team2 = $(el).find('.m-item-team').last().find('.m-item-team-name').text().trim();
-      const scoreDiv = $(el).find('.m-item-result');
-      const score1 = scoreDiv.find('span').first().text().trim();
-      const score2 = scoreDiv.find('span').last().text().trim();
-      // Tarih
-      const date = $(el).find('.m-item-date div').first().text().trim();
-      // Haritalar (altındaki .m-item-games-item'lar)
-      const maps = [];
-      // Her maç kartının hemen ardından gelen .mod-collapsed.m-item-games divini bul
-      const gamesDiv = $(el).next('.mod-collapsed.m-item-games');
-      if (gamesDiv.length > 0) {
-        gamesDiv.find('.m-item-games-item').each((j, gameEl) => {
-          const mapName = $(gameEl).find('.map').text().trim();
-          const mapScore = $(gameEl).find('.score').text().replace(/\s+/g, '').replace(/-/g, '-').trim();
-          maps.push({ name: mapName, score: mapScore });
-        });
-      }
-      matches.push({
-        id: matchId,
-        team1,
-        team2,
-        score: `${score1} : ${score2}`,
-        date,
-        event: eventFull,
-        maps,
-        url
-      });
-    });
-    return matches;
-  } catch (err) {
-    console.error('[ERROR] Takım geçmiş maçları çekilemedi:', err.message);
-    return [];
-  }
-}
 
 app.get('/api/teams/:id', async (req, res) => {
   const teamId = req.params.id;
   try {
-    const url = `https://www.vlr.gg/team/${teamId}/`;
-    const response = await http.get(url);
-    const $ = cheerio.load(response.data);
-
-    // Temel bilgiler
-    const name = $('h1').first().text().trim();
-    const tag = $('.team-header .team-header-tag').text().trim() || $('.team-header .wf-title-med').text().trim();
-    const logo = $('.team-header img').attr('src');
-    const region = $('.team-header .team-header-country').text().trim() || $('.team-header .ge-text-light').text().trim();
-    const website = $('.team-header a[href^="https://"]').attr('href') || null;
-    const twitter = $('.team-header a[href*="twitter.com"]').text().trim() || null;
-
-    // Kadro ve staff (ayrıştırılmış)
-    const roster = [];
-    const staff = [];
-    $('.team-roster-item').each((i, el) => {
-      const alias = $(el).find('.team-roster-item-name-alias').text().trim();
-      const realName = $(el).find('.team-roster-item-name-real').text().trim();
-      let role = $(el).find('.team-roster-item-name-role').first().text().trim();
-      const playerLink = $(el).find('a').attr('href');
-      let playerId = null;
-      if (playerLink && playerLink.startsWith('/player/')) {
-        const parts = playerLink.split('/');
-        if (parts.length > 2) playerId = parts[2];
-      }
-      // Eğer role varsa ve (manager, coach, inactive, performance içeriyorsa) staff'a ekle
-      if (role && /manager|coach|inactive|performance/i.test(role)) {
-        staff.push({ name: alias, realName, role });
-      } else {
-        // Oyuncu (role yoksa veya Sub ise)
-        if (!role) role = 'player';
-        roster.push({ id: playerId, name: alias, realName, role });
-      }
-    });
-
-    // Toplam kazanç
-    let totalWinnings = null;
-    const winningsRaw = $('.wf-card:contains("Total Winnings") span').text();
-    if (winningsRaw) {
-      // Sadece ilk $... değerini al
-      const match = winningsRaw.match(/\$[\d,]+/);
-      if (match) totalWinnings = match[0];
-    }
-
-    // Takım geçmiş maçları (recentMatches)
-    const recentMatches = await getTeamMatches(teamId);
-
-    // Sonuç
-    if (!name) return res.status(404).json({ error: 'Takım bulunamadı' });
-    res.json({
-      id: teamId,
-      name,
-      tag,
-      logo: logo ? `https://owcdn.net${logo}` : null,
-      region,
-      socials: { website, twitter },
-      roster,
-      staff,
-      totalWinnings,
-      recentMatches
-    });
+    const teamProfile = await getTeams.profile(teamId);
+    if (!teamProfile) return res.status(404).json({ error: 'Takım bulunamadı' });
+    res.json(teamProfile);
   } catch (error) {
-    console.error('[ERROR] Fetching team profile failed:', error);
-    res.status(500).json({ error: 'Failed to fetch team profile' });
+    handleHttpError(res, error, 'Failed to fetch team profile');
   }
 });
 
 app.get('/api/teams/:id/maps-stats', async (req, res) => {
   try {
-    const teamId = req.params.id;
-    const url = `https://www.vlr.gg/team/stats/${teamId}/`;
-    const response = await http.get(url);
-    const $ = cheerio.load(response.data);
-    const stats = [];
-    const mapTable = $('table.wf-table.mod-team-maps').first();
-
-    // 1. Tüm comp'ları topla ve map adına göre grupla
-    const allComps = {};
-    $('.agent-comp-agg.mod-first').each((i, compDiv) => {
-      const mapName = $(compDiv).attr('data-map');
-      if (!mapName) return;
-      const timesRaw = $(compDiv).find('span').eq(1).text().trim();
-      const timesMatch = timesRaw.match(/\((\d+)\)/);
-      const times = timesMatch ? parseInt(timesMatch[1], 10) : 1;
-      const agents = [];
-      $(compDiv).find('img').each((k, img) => {
-        let agent = $(img).attr('alt');
-        if (!agent) {
-          const src = $(img).attr('src') || '';
-          const match = src.match(/agents\/([a-z0-9]+)\.png/i);
-          agent = match ? match[1] : null;
-        }
-        if (agent) agents.push(agent);
-      });
-      const hash = $(compDiv).attr('data-agent-comp-hash') || null;
-      if (!allComps[mapName]) allComps[mapName] = [];
-      allComps[mapName].push({ hash, times, agents });
-    });
-
-    if (mapTable.length > 0) {
-      mapTable.find('tbody tr').each((i, row) => {
-        const tds = $(row).find('td');
-        if (tds.length > 0) {
-          // Map adı ve oynanma sayısı: örn. "Bind (71)"
-          let mapRaw = $(tds[0]).text().trim();
-          let mapMatch = mapRaw.match(/([\w\s]+)\s*\((\d+)\)/);
-          let map = mapMatch ? mapMatch[1].trim() : mapRaw;
-          let played = mapMatch ? parseInt(mapMatch[2], 10) : null;
-          // Diğer istatistikler sırayla hücrelerde
-          let winrate = tds.eq(2).text().trim();
-          let wins = tds.eq(3).text().trim();
-          let losses = tds.eq(4).text().trim();
-          let atkFirst = tds.eq(5).text().trim();
-          let defFirst = tds.eq(6).text().trim();
-          let atkRWin = tds.eq(7).text().trim();
-          let atkRW = tds.eq(8).text().trim();
-          let atkRL = tds.eq(9).text().trim();
-          let defRWin = tds.eq(10).text().trim();
-          let defRW = tds.eq(11).text().trim();
-          let defRL = tds.eq(12).text().trim();
-          // SADECE map adı doluysa ekle
-          if (map && map !== '') {
-            // comps'u map adına göre ekle
-            const comps = allComps[map] || [];
-            stats.push({
-              map,
-              played,
-              winrate,
-              wins,
-              losses,
-              atkFirst,
-              defFirst,
-              atkRWin,
-              atkRW,
-              atkRL,
-              defRWin,
-              defRW,
-              defRL,
-              comps
-            });
-          }
-        }
-      });
-    }
+    const stats = await getTeams.mapStats(req.params.id);
     res.json(stats);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch team map stats' });
+    handleHttpError(res, err, 'Failed to fetch team map stats');
   }
 });
 
 app.get('/api/teams/:id/agents-stats', async (req, res) => {
   try {
-    const teamId = req.params.id;
-    const url = `https://www.vlr.gg/team/stats/${teamId}/`;
-    const response = await http.get(url);
-    const $ = cheerio.load(response.data);
-    // Tüm agent kompozisyonlarını topla
-    const agentCounts = {};
-    let total = 0;
-    // Her map satırındaki agent-comp-agg'leri bul
-    $('div.agent-comp-agg.mod-first').each((i, el) => {
-      $(el).find('img').each((j, img) => {
-        // Agent ismini dosya adından çek
-        const src = $(img).attr('src') || '';
-        const match = src.match(/([a-z0-9]+)\.png/i);
-        let agent = match ? match[1] : null;
-        if (agent) {
-          agentCounts[agent] = (agentCounts[agent] || 0) + 1;
-          total++;
-        }
-      });
-    });
-    // Agent bazlı breakdown
-    const stats = Object.entries(agentCounts).map(([agent, count]) => ({
-      agent,
-      played: count,
-      pickrate: total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0%'
-    }));
+    const stats = await getTeams.agentStats(req.params.id);
     res.json(stats);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch team agent stats' });
+    handleHttpError(res, err, 'Failed to fetch team agent stats');
   }
 });
+
+// Health check endpoint
+app.get('/api/health', withCache('health', async (req, res) => {
+  const results = {};
+  try {
+    try {
+      const events = await getEvents();
+      results.events = { status: 'ok', count: Array.isArray(events) ? events.length : 0 };
+    } catch (e) {
+      results.events = { status: 'fail' };
+    }
+    try {
+      const teams = await getTeams('europe');
+      results.teams = { status: 'ok', count: Array.isArray(teams) ? teams.length : 0 };
+    } catch (e) {
+      results.teams = { status: 'fail' };
+    }
+    try {
+      const profile = await getTeams.profile('1001');
+      results.teamProfile = { status: profile ? 'ok' : 'fail' };
+    } catch (e) {
+      results.teamProfile = { status: 'fail' };
+    }
+    try {
+      const mapStats = await getTeams.mapStats('1001');
+      results.teamMapStats = { status: Array.isArray(mapStats) ? 'ok' : 'fail' };
+    } catch (e) {
+      results.teamMapStats = { status: 'fail' };
+    }
+    try {
+      const agentStats = await getTeams.agentStats('1001');
+      results.teamAgentStats = { status: Array.isArray(agentStats) ? 'ok' : 'fail' };
+    } catch (e) {
+      results.teamAgentStats = { status: 'fail' };
+    }
+    try {
+      const response = await http.get('https://www.vlr.gg/matches/results');
+      const $ = cheerio.load(response.data);
+      const matchItems = $('.match-item');
+      results.completedMatches = { status: matchItems.length > 0 ? 'ok' : 'fail' };
+    } catch (e) {
+      results.completedMatches = { status: 'fail' };
+    }
+    try {
+      const match = await getMatchDetails('484663');
+      results.matchDetails = { status: match ? 'ok' : 'fail' };
+    } catch (e) {
+      results.matchDetails = { status: 'fail' };
+    }
+    return { status: 'ok', results };
+  } catch (err) {
+    return { status: 'fail', results };
+  }
+}, 60));
 
 // 404 handler
 app.use((req, res) => {

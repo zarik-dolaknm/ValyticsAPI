@@ -385,28 +385,24 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         ]
         ```
 
-### Etkinliğin Harita ve Ajan İstatistiklerini Getirme
+### API Sağlık Kontrolü (Health Check)
 
--   `GET /api/events/:eventId/agents-stats`
-    -   Belirli bir etkinliğin harita ve ajan istatistiklerini döndürür.
-    -   **URL Parametreleri:**
-        -   `eventId` (gerekli): VLR.gg etkinlik ID'si.
-    -   **Örnek Kullanım:** `/api/events/1188/agents-stats`
+-   `GET /api/health`
+    -   API'nin ana fonksiyonlarının (events, teams, team profile, maps-stats, agents-stats, completed matches, match details) düzgün çalışıp çalışmadığını topluca kontrol eder.
     -   **Dönen Veri Yapısı:**
         ```json
-        [
-          {
-            "map": "Split",
-            "played": 20,
-            "attackWinrate": "47%",
-            "defenseWinrate": "53%",
-            "agents": [
-              { "agent": "Omen", "pickrate": "68%" },
-              { "agent": "Tejo", "pickrate": "38%" }
-            ]
+        {
+          "status": "ok",
+          "results": {
+            "events": { "status": "ok", "count": 20 },
+            "teams": { "status": "ok", "count": 30 },
+            "teamProfile": { "status": "ok" },
+            "teamMapStats": { "status": "ok" },
+            "teamAgentStats": { "status": "ok" },
+            "completedMatches": { "status": "ok" },
+            "matchDetails": { "status": "ok" }
           }
-          // ... diğer mapler ...
-        ]
+        }
         ```
 
 ## Kullanılan Teknolojiler
