@@ -219,6 +219,95 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: Hata
  */
 
+/**
+ * @openapi
+ * /api/teams:
+ *   get:
+ *     summary: Belirli bir bölgedeki takımların listesini getirir
+ *     parameters:
+ *       - in: query
+ *         name: region
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [europe, north-america, brazil, asia-pacific, korea, china, japan, la-s, oceania, gc, mena, collegiate]
+ *         description: Takımların çekileceği bölge (zorunlu)
+ *     responses:
+ *       200:
+ *         description: Takım listesi
+ *         content:
+ *           application/json:
+ *             example:
+ *               region: "europe"
+ *               total: 2
+ *               teams:
+ *                 - id: "1001"
+ *                   name: "Team Heretics"
+ *                   logo: "https://owcdn.net/img/637b755224c12.png"
+ *                   url: "https://www.vlr.gg/team/1001/team-heretics"
+ *                   country: "Europe"
+ *                 - id: "1050"
+ *                   name: "FNATIC"
+ *                   logo: "https://owcdn.net/img/62a40cc2b5e29.png"
+ *                   url: "https://www.vlr.gg/team/1050/fnatic"
+ *                   country: "Europe"
+ *       400:
+ *         description: Geçersiz veya eksik region parametresi
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/teams/{id}:
+ *   get:
+ *     summary: Takım profili ve detaylarını getirir
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: "Takım ID'si (ornegin 2593)"
+ *     responses:
+ *       200:
+ *         description: Takım profili ve detayları
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "2593"
+ *               name: "FNATIC"
+ *               tag: "FNC"
+ *               logo: "https://owcdn.net/img/62a40cc2b5e29.png"
+ *               region: "Europe"
+ *               socials:
+ *                 website: "https://fnatic.com"
+ *                 twitter: "@FNATIC"
+ *               roster:
+ *                 - name: "Boaster"
+ *                   realName: "Jake Howlett"
+ *                 - name: "crashies"
+ *                   realName: "Austin Roberts"
+ *               staff:
+ *                 - name: "CoJo"
+ *                   role: "manager"
+ *               recentResults:
+ *                 - event: "VCT 25: EMEA Stage 1 Playoffs"
+ *                   opponent: "Team Heretics"
+ *                   score: "3 : 0"
+ *                   date: "2025/05/18"
+ *               eventPlacements:
+ *                 - event: "Champions Tour 2025: EMEA Stage 1"
+ *                   placement: "1st"
+ *                   prize: "$100,000"
+ *                   year: "2025"
+ *               totalWinnings: "$1,417,285"
+ *       404:
+ *         description: Takım bulunamadı
+ *       500:
+ *         description: Hata
+ */
+
 // Ana endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -642,7 +731,7 @@ app.get('/api/players/:id', async (req, res) => {
       currentTeams: [],
       pastTeams: [],
       eventPlacements: [],
-      totalWinnings: $('.wf-module-label:contains("Total Winnings")').next('span').text().trim() || 'N/A'
+      totalWinnings: null
     };
 
     // Güncel Takım
@@ -848,6 +937,15 @@ app.get('/api/players/:id', async (req, res) => {
         if (DEBUG) console.log("Agent Stats Table not found.");
     }
 
+    // Toplam kazanç
+    let totalWinnings = null;
+    const winningsRaw = $('.wf-card:contains("Total Winnings") span').text();
+    if (winningsRaw) {
+      // Sadece ilk $... değerini al
+      const match = winningsRaw.match(/\$[\d,]+/);
+      if (match) totalWinnings = match[0];
+    }
+
     res.json(playerDetails);
 
   } catch (error) {
@@ -945,6 +1043,142 @@ app.get('/api/matches/live', async (req, res) => {
   } catch (error) {
     console.error('[ERROR] Fetching live matches failed:', error);
     res.status(500).json({ error: 'Failed to fetch live matches' });
+  }
+});
+
+const REGION_URLS = {
+  'europe': 'https://www.vlr.gg/rankings/europe',
+  'north-america': 'https://www.vlr.gg/rankings/north-america',
+  'brazil': 'https://www.vlr.gg/rankings/brazil',
+  'asia-pacific': 'https://www.vlr.gg/rankings/asia-pacific',
+  'korea': 'https://www.vlr.gg/rankings/korea',
+  'china': 'https://www.vlr.gg/rankings/china',
+  'japan': 'https://www.vlr.gg/rankings/japan',
+  'la-s': 'https://www.vlr.gg/rankings/la-s',
+  'oceania': 'https://www.vlr.gg/rankings/oceania',
+  'gc': 'https://www.vlr.gg/rankings/gc',
+  'mena': 'https://www.vlr.gg/rankings/mena',
+  'collegiate': 'https://www.vlr.gg/rankings/collegiate',
+};
+
+app.get('/api/teams', async (req, res) => {
+  const region = req.query.region;
+  if (!region || !REGION_URLS[region]) {
+    return res.status(400).json({ error: 'Geçersiz veya eksik region parametresi', supported: Object.keys(REGION_URLS) });
+  }
+  try {
+    const url = REGION_URLS[region];
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+    const teams = [];
+    $('a.rank-item-team').each((i, el) => {
+      const href = $(el).attr('href');
+      const id = href ? href.split('/')[2] : null;
+      const name = $(el).find('img').attr('alt') || $(el).find('.ge-text').clone().children().remove().end().text().trim();
+      const logo = $(el).find('img').attr('src');
+      const country = $(el).find('.rank-item-team-country').text().trim();
+      if (id && name) {
+        teams.push({
+          id,
+          name,
+          logo: logo ? `https://owcdn.net${logo}` : null,
+          url: href ? `https://www.vlr.gg${href}` : null,
+          country
+        });
+      }
+    });
+    res.json({ region, total: teams.length, teams });
+  } catch (error) {
+    console.error('[ERROR] Fetching teams failed:', error);
+    res.status(500).json({ error: 'Failed to fetch teams' });
+  }
+});
+
+app.get('/api/teams/:id', async (req, res) => {
+  const teamId = req.params.id;
+  try {
+    const url = `https://www.vlr.gg/team/${teamId}/`;
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+
+    // Temel bilgiler
+    const name = $('h1').first().text().trim();
+    const tag = $('.team-header .team-header-tag').text().trim() || $('.team-header .wf-title-med').text().trim();
+    const logo = $('.team-header img').attr('src');
+    const region = $('.team-header .team-header-country').text().trim() || $('.team-header .ge-text-light').text().trim();
+    const website = $('.team-header a[href^="https://"]').attr('href') || null;
+    const twitter = $('.team-header a[href*="twitter.com"]').text().trim() || null;
+
+    // Kadro ve staff (ayrıştırılmış)
+    const roster = [];
+    const staff = [];
+    $('.team-roster-item').each((i, el) => {
+      const alias = $(el).find('.team-roster-item-name-alias').text().trim();
+      const realName = $(el).find('.team-roster-item-name-real').text().trim();
+      let role = $(el).find('.team-roster-item-name-role').first().text().trim();
+      const playerLink = $(el).find('a').attr('href');
+      let playerId = null;
+      if (playerLink && playerLink.startsWith('/player/')) {
+        const parts = playerLink.split('/');
+        if (parts.length > 2) playerId = parts[2];
+      }
+      // Eğer role varsa ve (manager, coach, inactive, performance içeriyorsa) staff'a ekle
+      if (role && /manager|coach|inactive|performance/i.test(role)) {
+        staff.push({ name: alias, realName, role });
+      } else {
+        // Oyuncu (role yoksa veya Sub ise)
+        if (!role) role = 'player';
+        roster.push({ id: playerId, name: alias, realName, role });
+      }
+    });
+
+    // Son maçlar
+    const recentResults = [];
+    $('.wf-card:contains("Recent Results") .match-item').each((i, el) => {
+      const event = $(el).find('.match-item-event').text().trim();
+      const opponent = $(el).find('.match-item-vs-team-name').last().text().trim();
+      const score = $(el).find('.match-item-vs-team-score').first().text().trim() + ' : ' + $(el).find('.match-item-vs-team-score').last().text().trim();
+      const date = $(el).find('.match-item-time').text().trim();
+      if (event && opponent) recentResults.push({ event, opponent, score, date });
+    });
+
+    // Event dereceleri
+    const eventPlacements = [];
+    $('.wf-card:contains("Event Placements") .event-placement-item').each((i, el) => {
+      const event = $(el).find('.event-placement-event').text().trim();
+      const placement = $(el).find('.event-placement-place').text().trim();
+      const prize = $(el).find('.event-placement-prize').text().trim();
+      const year = $(el).find('.event-placement-year').text().trim();
+      if (event && placement) eventPlacements.push({ event, placement, prize, year });
+    });
+
+    // Toplam kazanç
+    let totalWinnings = null;
+    const winningsRaw = $('.wf-card:contains("Total Winnings") span').text();
+    if (winningsRaw) {
+      // Sadece ilk $... değerini al
+      const match = winningsRaw.match(/\$[\d,]+/);
+      if (match) totalWinnings = match[0];
+    }
+
+    // Sonuç
+    if (!name) return res.status(404).json({ error: 'Takım bulunamadı' });
+    res.json({
+      id: teamId,
+      name,
+      tag,
+      logo: logo ? `https://owcdn.net${logo}` : null,
+      region,
+      socials: { website, twitter },
+      roster,
+      staff,
+      recentResults,
+      eventPlacements,
+      totalWinnings
+    });
+  } catch (error) {
+    console.error('[ERROR] Fetching team profile failed:', error);
+    res.status(500).json({ error: 'Failed to fetch team profile' });
   }
 });
 
