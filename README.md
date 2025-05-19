@@ -364,7 +364,7 @@ Katkıda bulunmak isterseniz, lütfen pull request göndermekten çekinmeyin.
 
 ## Lisans
 
-Bu proje [Lisans Adı]'nı kullanır. (Lisans adını buraya ekleyin)
+Bu proje MIT lisansı ile lisanslanmıştır. Detaylar için [LICENSE](./LICENSE) dosyasına bakabilirsiniz.
 
 ## Swagger / OpenAPI Desteği
 
