@@ -308,6 +308,105 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: Hata
  */
 
+/**
+ * @openapi
+ * /api/teams/{id}/maps-stats:
+ *   get:
+ *     summary: Takımın harita istatistiklerini getirir
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Takım ID
+ *     responses:
+ *       200:
+ *         description: Harita istatistikleri
+ *         content:
+ *           application/json:
+ *             example:
+ *               - map: "Breeze"
+ *                 played: 23
+ *                 winrate: "78%"
+ *                 wins: "18"
+ *                 losses: "5"
+ *                 atkFirst: "5"
+ *                 defFirst: "18"
+ *                 atkRWin: "58%"
+ *                 atkRW: "138"
+ *                 atkRL: "98"
+ *                 defRWin: "54%"
+ *                 defRW: "147"
+ *                 defRL: "126"
+ *                 comps:
+ *                   - hash: "2b2e5b43d9fd"
+ *                     times: 2
+ *                     agents: ["cypher", "kayo", "sova", "viper", "yoru"]
+ *                   - hash: "389a15009875"
+ *                     times: 2
+ *                     agents: ["chamber", "jett", "kayo", "sova", "viper"]
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/teams/{id}/agents-stats:
+ *   get:
+ *     summary: Takımın ajan istatistiklerini getirir
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Takım ID
+ *     responses:
+ *       200:
+ *         description: Ajan istatistikleri
+ *         content:
+ *           application/json:
+ *             example:
+ *               - agent: "Omen"
+ *                 played: 15
+ *                 winrate: "60%"
+ *                 pickrate: "38%"
+ *       500:
+ *         description: Hata
+ */
+
+/**
+ * @openapi
+ * /api/events/{eventId}/agents-stats:
+ *   get:
+ *     summary: Belirli bir etkinliğin harita ve ajan istatistiklerini getirir
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Etkinlik ID
+ *     responses:
+ *       200:
+ *         description: Harita ve ajan istatistikleri
+ *         content:
+ *           application/json:
+ *             example:
+ *               - map: "Split"
+ *                 played: 20
+ *                 attackWinrate: "47%"
+ *                 defenseWinrate: "53%"
+ *                 agents:
+ *                   - agent: "Omen"
+ *                     pickrate: "68%"
+ *                   - agent: "Tejo"
+ *                     pickrate: "38%"
+ *       500:
+ *         description: Hata
+ */
+
 // Ana endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -1195,6 +1294,123 @@ app.get('/api/teams/:id', async (req, res) => {
   } catch (error) {
     console.error('[ERROR] Fetching team profile failed:', error);
     res.status(500).json({ error: 'Failed to fetch team profile' });
+  }
+});
+
+app.get('/api/teams/:id/maps-stats', async (req, res) => {
+  try {
+    const teamId = req.params.id;
+    const url = `https://www.vlr.gg/team/stats/${teamId}/`;
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+    const stats = [];
+    const mapTable = $('table.wf-table.mod-team-maps').first();
+
+    // 1. Tüm comp'ları topla ve map adına göre grupla
+    const allComps = {};
+    $('.agent-comp-agg.mod-first').each((i, compDiv) => {
+      const mapName = $(compDiv).attr('data-map');
+      if (!mapName) return;
+      const timesRaw = $(compDiv).find('span').eq(1).text().trim();
+      const timesMatch = timesRaw.match(/\((\d+)\)/);
+      const times = timesMatch ? parseInt(timesMatch[1], 10) : 1;
+      const agents = [];
+      $(compDiv).find('img').each((k, img) => {
+        let agent = $(img).attr('alt');
+        if (!agent) {
+          const src = $(img).attr('src') || '';
+          const match = src.match(/agents\/([a-z0-9]+)\.png/i);
+          agent = match ? match[1] : null;
+        }
+        if (agent) agents.push(agent);
+      });
+      const hash = $(compDiv).attr('data-agent-comp-hash') || null;
+      if (!allComps[mapName]) allComps[mapName] = [];
+      allComps[mapName].push({ hash, times, agents });
+    });
+
+    if (mapTable.length > 0) {
+      mapTable.find('tbody tr').each((i, row) => {
+        const tds = $(row).find('td');
+        if (tds.length > 0) {
+          // Map adı ve oynanma sayısı: örn. "Bind (71)"
+          let mapRaw = $(tds[0]).text().trim();
+          let mapMatch = mapRaw.match(/([\w\s]+)\s*\((\d+)\)/);
+          let map = mapMatch ? mapMatch[1].trim() : mapRaw;
+          let played = mapMatch ? parseInt(mapMatch[2], 10) : null;
+          // Diğer istatistikler sırayla hücrelerde
+          let winrate = tds.eq(2).text().trim();
+          let wins = tds.eq(3).text().trim();
+          let losses = tds.eq(4).text().trim();
+          let atkFirst = tds.eq(5).text().trim();
+          let defFirst = tds.eq(6).text().trim();
+          let atkRWin = tds.eq(7).text().trim();
+          let atkRW = tds.eq(8).text().trim();
+          let atkRL = tds.eq(9).text().trim();
+          let defRWin = tds.eq(10).text().trim();
+          let defRW = tds.eq(11).text().trim();
+          let defRL = tds.eq(12).text().trim();
+          // SADECE map adı doluysa ekle
+          if (map && map !== '') {
+            // comps'u map adına göre ekle
+            const comps = allComps[map] || [];
+            stats.push({
+              map,
+              played,
+              winrate,
+              wins,
+              losses,
+              atkFirst,
+              defFirst,
+              atkRWin,
+              atkRW,
+              atkRL,
+              defRWin,
+              defRW,
+              defRL,
+              comps
+            });
+          }
+        }
+      });
+    }
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch team map stats' });
+  }
+});
+
+app.get('/api/teams/:id/agents-stats', async (req, res) => {
+  try {
+    const teamId = req.params.id;
+    const url = `https://www.vlr.gg/team/stats/${teamId}/`;
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+    // Tüm agent kompozisyonlarını topla
+    const agentCounts = {};
+    let total = 0;
+    // Her map satırındaki agent-comp-agg'leri bul
+    $('div.agent-comp-agg.mod-first').each((i, el) => {
+      $(el).find('img').each((j, img) => {
+        // Agent ismini dosya adından çek
+        const src = $(img).attr('src') || '';
+        const match = src.match(/([a-z0-9]+)\.png/i);
+        let agent = match ? match[1] : null;
+        if (agent) {
+          agentCounts[agent] = (agentCounts[agent] || 0) + 1;
+          total++;
+        }
+      });
+    });
+    // Agent bazlı breakdown
+    const stats = Object.entries(agentCounts).map(([agent, count]) => ({
+      agent,
+      played: count,
+      pickrate: total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0%'
+    }));
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch team agent stats' });
   }
 });
 

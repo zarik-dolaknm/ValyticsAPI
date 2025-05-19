@@ -343,6 +343,72 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
         }
         ```
 
+### Takımın Harita İstatistiklerini ve Comp'larını Getirme
+
+-   `GET /api/teams/:id/maps-stats`
+    -   Belirli bir takımın harita istatistiklerini ve oynanan agent comp'larını (ajan dizilimleri) döndürür.
+    -   **URL Parametreleri:**
+        -   `id` (gerekli): VLR.gg takım ID'si (Örnek: 474).
+    -   **Örnek Kullanım:** `/api/teams/474/maps-stats`
+    -   **Dönen Veri Yapısı:**
+        ```json
+        [
+          {
+            "map": "Breeze",
+            "played": 23,
+            "winrate": "78%",
+            "wins": "18",
+            "losses": "5",
+            "atkFirst": "5",
+            "defFirst": "18",
+            "atkRWin": "58%",
+            "atkRW": "138",
+            "atkRL": "98",
+            "defRWin": "54%",
+            "defRW": "147",
+            "defRL": "126",
+            "comps": [
+              {
+                "hash": "2b2e5b43d9fd",
+                "times": 2,
+                "agents": ["cypher", "kayo", "sova", "viper", "yoru"]
+              },
+              {
+                "hash": "389a15009875",
+                "times": 2,
+                "agents": ["chamber", "jett", "kayo", "sova", "viper"]
+              }
+              // ... diğer comp'lar ...
+            ]
+          }
+          // ... diğer mapler ...
+        ]
+        ```
+
+### Etkinliğin Harita ve Ajan İstatistiklerini Getirme
+
+-   `GET /api/events/:eventId/agents-stats`
+    -   Belirli bir etkinliğin harita ve ajan istatistiklerini döndürür.
+    -   **URL Parametreleri:**
+        -   `eventId` (gerekli): VLR.gg etkinlik ID'si.
+    -   **Örnek Kullanım:** `/api/events/1188/agents-stats`
+    -   **Dönen Veri Yapısı:**
+        ```json
+        [
+          {
+            "map": "Split",
+            "played": 20,
+            "attackWinrate": "47%",
+            "defenseWinrate": "53%",
+            "agents": [
+              { "agent": "Omen", "pickrate": "68%" },
+              { "agent": "Tejo", "pickrate": "38%" }
+            ]
+          }
+          // ... diğer mapler ...
+        ]
+        ```
+
 ## Kullanılan Teknolojiler
 
 -   Node.js
