@@ -420,41 +420,35 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
     -   Belirli bir takımın harita istatistiklerini ve oynanan agent comp'larını (ajan dizilimleri) döndürür.
     -   **URL Parametreleri:**
         -   `id` (gerekli): Takım ID'si (Örnek: 474).
-    -   **Örnek Kullanım:** `/api/teams/474/maps-stats`
+    -   **Query Parametreleri:**
+        -   `last` (isteğe bağlı): Son X maç bazında istatistik (örn. last=10 ile son 10 maç). Belirtilmezse tüm zamanlar alınır.
+    -   **Örnek Kullanım:** `/api/teams/474/maps-stats?last=10`
     -   **Dönen Veri Yapısı:**
         ```json
         [
           {
             "map": "Breeze",
-            "played": 23,
-            "winrate": "78%",
-            "wins": "18",
-            "losses": "5",
-            "atkFirst": "5",
-            "defFirst": "18",
-            "atkRWin": "58%",
-            "atkRW": "138",
-            "atkRL": "98",
-            "defRWin": "54%",
-            "defRW": "147",
-            "defRL": "126",
-            "comps": [
-              {
-                "hash": "2b2e5b43d9fd",
-                "times": 2,
-                "agents": ["cypher", "kayo", "sova", "viper", "yoru"]
-              },
-              {
-                "hash": "389a15009875",
-                "times": 2,
-                "agents": ["chamber", "jett", "kayo", "sova", "viper"]
-              }
-              // ... diğer comp'lar ...
-            ]
+            "played": 5,
+            "winrate": "80%",
+            "wins": 4,
+            "losses": 1,
+            "atkFirst": null,
+            "defFirst": null,
+            "atkRWin": null,
+            "atkRW": null,
+            "atkRL": null,
+            "defRWin": null,
+            "defRW": null,
+            "defRL": null,
+            "comps": []
           }
           // ... diğer mapler ...
         ]
         ```
+    -   **Açıklama:**
+        -   `last` parametresi ile sadece son X maçtaki harita istatistikleri döner.
+        -   `comps` alanı son X maçta dolu olmayabilir (sadece özetten çekilebilen comp'lar gösterilir).
+        -   Parametre verilmezse tüm zamanların istatistikleri döner.
 
 ### Takım Profili ve Dikkat Çekici İstatistikler
 

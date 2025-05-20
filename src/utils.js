@@ -232,7 +232,7 @@ async function getTeamMatches(teamId) {
   const response = await http.get(url);
   const $ = cheerio.load(response.data);
   const matches = [];
-  $('a.fc-flex.wf-card.m-item').each((i, el) => {
+  $('a.fc-flex.m-item.wf-card').each((i, el) => {
     const matchLink = $(el).attr('href');
     const matchId = matchLink ? matchLink.split('/')[1] : null;
     const url = matchLink ? `https://www.vlr.gg${matchLink}` : null;
@@ -270,6 +270,8 @@ async function getTeamMatches(teamId) {
       url
     });
   });
+  console.log(`[DEBUG][getTeamMatches] Found ${matches.length} matches for team ${teamId}`);
+  matches.forEach((m, i) => console.log(`[DEBUG][getTeamMatches] Match ${i}: id=${m.id}, maps=${m.maps.map(mp=>mp.name).join(',')}`));
   return matches;
 }
 
@@ -310,6 +312,43 @@ async function getMatchDetails(matchId) {
       duration: mapDuration,
       players: []
     });
+  });
+  // --- ROUND BREAKDOWN ---
+  // Her map için .vlr-rounds divini bul ve round breakdown ekle
+  $('.vlr-rounds').each((mapIdx, roundsDiv) => {
+    const $rounds = $(roundsDiv);
+    // Takım isimlerini sırayla al
+    const teamNames = $rounds.find('.vlr-rounds-row .team').map((i, el) => $(el).text().trim()).get();
+    if (teamNames.length < 2) return;
+    const [team1, team2] = teamNames;
+    let atkRoundsWon = { [team1]: 0, [team2]: 0 };
+    let defRoundsWon = { [team1]: 0, [team2]: 0 };
+    // Her round için .vlr-rounds-row-col (ilk col hariç) gez
+    $rounds.find('.vlr-rounds-row-col').each((i, col) => {
+      // Sadece round numarası olanları ve spacing olmayanları al
+      if ($(col).hasClass('mod-spacing')) return;
+      const roundNum = $(col).find('.rnd-num').text().trim();
+      if (!roundNum) return;
+      // Her roundda iki .rnd-sq var: ilki team1 (CT), ikincisi team2 (T)
+      const sqs = $(col).find('.rnd-sq');
+      if (sqs.length < 2) return;
+      // mod-win mod-ct veya mod-win mod-t class'ına bak
+      if ($(sqs[0]).hasClass('mod-win')) {
+        if ($(sqs[0]).hasClass('mod-ct')) defRoundsWon[team1]++;
+        if ($(sqs[0]).hasClass('mod-t')) atkRoundsWon[team1]++;
+      }
+      if ($(sqs[1]).hasClass('mod-win')) {
+        if ($(sqs[1]).hasClass('mod-ct')) defRoundsWon[team2]++;
+        if ($(sqs[1]).hasClass('mod-t')) atkRoundsWon[team2]++;
+      }
+    });
+    // Sonuçları ilgili map'e ekle
+    if (matchDetails.maps[mapIdx]) {
+      matchDetails.maps[mapIdx].roundBreakdown = {
+        [team1]: { atkRoundsWon: atkRoundsWon[team1], defRoundsWon: defRoundsWon[team1] },
+        [team2]: { atkRoundsWon: atkRoundsWon[team2], defRoundsWon: defRoundsWon[team2] }
+      };
+    }
   });
   const allTables = $('table.wf-table-inset');
   const playerStatTables = allTables.filter('.mod-overview');
@@ -377,7 +416,179 @@ async function getMatchDetails(matchId) {
   return matchDetails;
 }
 
-getTeams.mapStats = async function(teamId) {
+getTeams.mapStats = async function(teamId, last) {
+  if (last) {
+    const matches = await getTeamMatches(teamId);
+    const lastMatches = matches.slice(0, last);
+    const teamName = lastMatches.length > 0 ? lastMatches[0].team1 : null;
+    const teamTag = lastMatches.length > 0 ? lastMatches[0].team1Tag : null;
+    console.log(`[DEBUG][mapStats] Using last ${last} matches:`, lastMatches.map(m=>m.id));
+    console.log(`[DEBUG][mapStats] teamName: ${teamName}, teamTag: ${teamTag}`);
+    const mapStatsAgg = {};
+    // Map bazında toplam atak/defans round sayısını da topla
+    const totalAtkRounds = {};
+    const totalDefRounds = {};
+    for (const match of lastMatches) {
+      let teamName = null;
+      let teamTag = null;
+      if (match.team1 && match.team1.length > 0 && match.team2 && match.team2.length > 0) {
+        teamName = match.team1;
+        if (match.team1Tag) teamTag = match.team1Tag;
+        else {
+          const tagGuess = (teamName.match(/\b([A-Z]{2,5})\b/) || [])[1];
+          if (tagGuess) teamTag = tagGuess;
+        }
+      }
+      const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '').trim();
+      const normTeamName = norm(teamName);
+      const normTeamTag = norm(teamTag);
+      console.log(`[DEBUG][mapStats] Match ${match.id}: using teamName='${teamName}' (norm='${normTeamName}'), teamTag='${teamTag}' (norm='${normTeamTag}')`);
+      let matchDetail = null;
+      try {
+        matchDetail = await getMatchDetails(match.id);
+      } catch (e) {
+        console.log(`[DEBUG][mapStats] Failed to fetch match details for ${match.id}:`, e.message);
+        continue;
+      }
+      if (!Array.isArray(match.maps)) continue;
+      for (const mapObj of match.maps) {
+        const map = mapObj.name;
+        if (!mapStatsAgg[map]) mapStatsAgg[map] = {
+          map,
+          played: 0,
+          wins: 0,
+          losses: 0,
+          comps: [],
+          compsHash: {},
+          atkRW: 0,
+          atkRL: 0,
+          defRW: 0,
+          defRL: 0
+        };
+        if (!totalAtkRounds[map]) totalAtkRounds[map] = 0;
+        if (!totalDefRounds[map]) totalDefRounds[map] = 0;
+        mapStatsAgg[map].played++;
+        let score = mapObj.score || '';
+        let [s1, s2] = score.split(/\D+/).map(s => parseInt(s.trim(), 10));
+        const norm1 = norm(match.team1);
+        const norm2 = norm(match.team2);
+        let isTeam1 = norm1 === normTeamName;
+        let isTeam2 = norm2 === normTeamName;
+        if (!isNaN(s1) && !isNaN(s2)) {
+          if (isTeam1 && s1 > s2) mapStatsAgg[map].wins++;
+          else if (isTeam2 && s2 > s1) mapStatsAgg[map].wins++;
+          else mapStatsAgg[map].losses++;
+        }
+        // --- ROUND BREAKDOWN ---
+        if (matchDetail && Array.isArray(matchDetail.maps)) {
+          const foundMap = matchDetail.maps.find(m => norm(m.name) === norm(map));
+          if (foundMap && foundMap.roundBreakdown) {
+            let teamKey = null;
+            for (const k of Object.keys(foundMap.roundBreakdown)) {
+              if (norm(k) === normTeamName) teamKey = k;
+            }
+            if (!teamKey && teamTag) {
+              for (const k of Object.keys(foundMap.roundBreakdown)) {
+                if (norm(k) === normTeamTag) teamKey = k;
+              }
+            }
+            if (!teamKey) {
+              for (const k of Object.keys(foundMap.roundBreakdown)) {
+                if (norm(k).includes(normTeamTag) || normTeamTag.includes(norm(k)) || norm(k).includes(normTeamName) || normTeamName.includes(norm(k))) {
+                  teamKey = k;
+                }
+              }
+            }
+            if (teamKey) {
+              // Rakip takım anahtarını bul
+              const allKeys = Object.keys(foundMap.roundBreakdown);
+              const rivalKey = allKeys.find(k => k !== teamKey);
+              // Kendi ve rakip breakdown
+              const myBreak = foundMap.roundBreakdown[teamKey];
+              const rivalBreak = rivalKey ? foundMap.roundBreakdown[rivalKey] : { atkRoundsWon: 0, defRoundsWon: 0 };
+              // Toplam atak roundu = kendi atak kazancı + rakibin defans kazancı
+              const totalAtk = (myBreak.atkRoundsWon || 0) + (rivalBreak.defRoundsWon || 0);
+              // Toplam defans roundu = kendi defans kazancı + rakibin atak kazancı
+              const totalDef = (myBreak.defRoundsWon || 0) + (rivalBreak.atkRoundsWon || 0);
+              mapStatsAgg[map].atkRW += myBreak.atkRoundsWon || 0;
+              mapStatsAgg[map].defRW += myBreak.defRoundsWon || 0;
+              totalAtkRounds[map] += totalAtk;
+              totalDefRounds[map] += totalDef;
+              // Kaybedilen roundlar (opsiyonel, response'a ekleyeceğiz)
+              if (!mapStatsAgg[map].atkRL) mapStatsAgg[map].atkRL = 0;
+              if (!mapStatsAgg[map].defRL) mapStatsAgg[map].defRL = 0;
+              mapStatsAgg[map].atkRL += totalAtk - (myBreak.atkRoundsWon || 0);
+              mapStatsAgg[map].defRL += totalDef - (myBreak.defRoundsWon || 0);
+              console.log(`[DEBUG][mapStats] Map ${map} (match ${match.id}): teamKey=${teamKey}, atkRW+${myBreak.atkRoundsWon || 0}, defRW+${myBreak.defRoundsWon || 0}, atkRL+${totalAtk - (myBreak.atkRoundsWon || 0)}, defRL+${totalDef - (myBreak.defRoundsWon || 0)}`);
+            } else {
+              console.log(`[DEBUG][mapStats] Map ${map} (match ${match.id}): teamKey NOT FOUND for normTeamName=${normTeamName}, normTeamTag=${normTeamTag}, roundBreakdown keys=${Object.keys(foundMap.roundBreakdown).join(',')}`);
+            }
+          }
+        }
+        // --- COMP AGGREGATION ---
+        if (matchDetail && Array.isArray(matchDetail.maps)) {
+          const foundMap = matchDetail.maps.find(m => norm(m.name) === norm(map));
+          if (foundMap && Array.isArray(foundMap.players)) {
+            // Takım oyuncularını bul (önce normTeamName/normTeamTag ile)
+            let teamPlayers = foundMap.players.filter(p => norm(p.team) === normTeamName || norm(p.team) === normTeamTag);
+            // Eğer 5 oyuncu bulunamazsa, en çok görülen takım adını bul ve tekrar dene
+            if (teamPlayers.length !== 5) {
+              const teamCounts = {};
+              foundMap.players.forEach(p => {
+                const t = norm(p.team);
+                if (!teamCounts[t]) teamCounts[t] = 0;
+                teamCounts[t]++;
+              });
+              const mostCommonTeam = Object.entries(teamCounts).sort((a,b) => b[1]-a[1])[0]?.[0];
+              if (mostCommonTeam) {
+                teamPlayers = foundMap.players.filter(p => norm(p.team) === mostCommonTeam);
+              }
+              if (teamPlayers.length !== 5) {
+                // Eksik veya fazla oyuncu varsa logla
+                console.log(`[DEBUG][comps][MISSING] Map ${map} (match ${match.id}): teamPlayers.length=${teamPlayers.length}, found: [${teamPlayers.map(p=>p.name+':'+p.agent).join(', ')}], allPlayers: [${foundMap.players.map(p=>p.team+':'+p.name+':'+p.agent).join(', ')}], normTeamName=${normTeamName}, normTeamTag=${normTeamTag}, mostCommonTeam=${mostCommonTeam}`);
+              }
+            }
+            if (teamPlayers.length === 5) {
+              const agents = teamPlayers.map(p => p.agent).sort();
+              const key = agents.join(',');
+              if (!mapStatsAgg[map].compsHash[key]) {
+                mapStatsAgg[map].compsHash[key] = { agents, times: 1 };
+              } else {
+                mapStatsAgg[map].compsHash[key].times += 1;
+              }
+              console.log(`[DEBUG][comps] Map ${map} (match ${match.id}): agents=${agents.join(',')}`);
+            }
+          }
+        }
+      }
+    }
+    // Debug log for total rounds
+    Object.keys(mapStatsAgg).forEach(map => {
+      console.log(`[DEBUG][mapStats] Map ${map}: totalAtkRounds=${totalAtkRounds[map]}, totalDefRounds=${totalDefRounds[map]}`);
+    });
+    // comps dizisini finalize et
+    Object.keys(mapStatsAgg).forEach(mapName => {
+      mapStatsAgg[mapName].comps = Object.values(mapStatsAgg[mapName].compsHash || {});
+      const totalComps = mapStatsAgg[mapName].comps.reduce((sum, c) => sum + c.times, 0);
+      if (totalComps !== mapStatsAgg[mapName].played) {
+        console.log(`[DEBUG][comps][SUMMARY] Map ${mapName}: played=${mapStatsAgg[mapName].played}, compsTotal=${totalComps}, eksik=${mapStatsAgg[mapName].played - totalComps}`);
+      }
+      delete mapStatsAgg[mapName].compsHash;
+    });
+    return Object.values(mapStatsAgg).map(obj => ({
+      ...obj,
+      winrate: obj.played > 0 ? ((obj.wins / obj.played) * 100).toFixed(0) + '%' : '0%',
+      atkRWin: totalAtkRounds[obj.map] > 0 ? ((obj.atkRW / totalAtkRounds[obj.map]) * 100).toFixed(0) + '%' : null,
+      atkRW: obj.atkRW,
+      atkRL: obj.atkRL,
+      defRWin: totalDefRounds[obj.map] > 0 ? ((obj.defRW / totalDefRounds[obj.map]) * 100).toFixed(0) + '%' : null,
+      defRW: obj.defRW,
+      defRL: obj.defRL,
+      comps: obj.comps || []
+    }));
+  }
+  // ... existing code ...
+  // (default: all-time stats from team stats page)
   const url = `https://www.vlr.gg/team/stats/${teamId}/`;
   const response = await http.get(url);
   const $ = cheerio.load(response.data);

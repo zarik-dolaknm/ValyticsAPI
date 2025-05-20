@@ -330,6 +330,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         schema:
  *           type: string
  *         description: Takım ID
+ *       - in: query
+ *         name: last
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         description: Son X maç bazında istatistik (örn. last=10 ile son 10 maç)
  *     responses:
  *       200:
  *         description: Harita istatistikleri
@@ -337,25 +343,19 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *           application/json:
  *             example:
  *               - map: "Breeze"
- *                 played: 23
- *                 winrate: "78%"
- *                 wins: "18"
- *                 losses: "5"
- *                 atkFirst: "5"
- *                 defFirst: "18"
- *                 atkRWin: "58%"
- *                 atkRW: "138"
- *                 atkRL: "98"
- *                 defRWin: "54%"
- *                 defRW: "147"
- *                 defRL: "126"
- *                 comps:
- *                   - hash: "2b2e5b43d9fd"
- *                     times: 2
- *                     agents: ["cypher", "kayo", "sova", "viper", "yoru"]
- *                   - hash: "389a15009875"
- *                     times: 2
- *                     agents: ["chamber", "jett", "kayo", "sova", "viper"]
+ *                 played: 5
+ *                 winrate: "80%"
+ *                 wins: "4"
+ *                 losses: "1"
+ *                 atkFirst: null
+ *                 defFirst: null
+ *                 atkRWin: null
+ *                 atkRW: null
+ *                 atkRL: null
+ *                 defRWin: null
+ *                 defRW: null
+ *                 defRL: null
+ *                 comps: []
  *       500:
  *         description: Hata
  */
@@ -699,13 +699,6 @@ app.get('/api/players/:id', async (req, res) => {
 
     if (DEBUG) console.log(`DEBUG: Processing player ID: ${playerId} with timespan: ${timespan || 'default'}`);
     if (DEBUG) console.log("DEBUG: Player page HTML loaded.");
-
-    // !!! DEBUG: Çekilen tüm HTML içinde "LOUD" kelimesini ara
-    // const htmlContent = response.data;
-    // const loudFound = htmlContent.includes('LOUD');
-    // const loudIdFound = htmlContent.includes('/team/455');
-    // console.log(`DEBUG: "LOUD" found in HTML: ${loudFound}`);
-    // console.log(`DEBUG: "/team/455" found in HTML: ${loudIdFound}`);
 
     // Oyuncu temel bilgileri
     const firstCard = $('a.wf-card.fc-flex.m-item').first();
@@ -1064,7 +1057,8 @@ app.get('/api/teams/:id', async (req, res) => {
 
 app.get('/api/teams/:id/maps-stats', async (req, res) => {
   try {
-    const stats = await getTeams.mapStats(req.params.id);
+    const last = req.query.last ? parseInt(req.query.last) : undefined;
+    const stats = await getTeams.mapStats(req.params.id, last);
     res.json(stats);
   } catch (err) {
     handleHttpError(res, err, 'Failed to fetch team map stats');
