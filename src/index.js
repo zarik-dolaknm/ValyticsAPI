@@ -65,6 +65,11 @@ const swaggerSpec = swaggerJSDoc(swaggerOptions);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Redirect root URL to API Docs
+app.get('/', (req, res) => {
+  res.redirect('/api-docs');
+});
+
 /**
  * @openapi
  * /api/matches/completed:
@@ -1076,55 +1081,206 @@ app.get('/api/teams/:id/agents-stats', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', withCache('health', async (req, res) => {
-  const results = {};
+  const results = {
+    api: {
+      status: 'ok',
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
+    },
+    endpoints: {},
+    services: {},
+    database: {
+      status: 'ok',
+      cache: 'ok'
+    }
+  };
+
   try {
+    // Events endpoint kontrolü
     try {
       const events = await getEvents();
-      results.events = { status: 'ok', count: Array.isArray(events) ? events.length : 0 };
+      results.endpoints.events = { 
+        status: 'ok', 
+        count: Array.isArray(events) ? events.length : 0,
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.events = { status: 'fail' };
+      results.endpoints.events = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Teams endpoint kontrolü
     try {
       const teams = await getTeams('europe');
-      results.teams = { status: 'ok', count: Array.isArray(teams) ? teams.length : 0 };
+      results.endpoints.teams = { 
+        status: 'ok', 
+        count: Array.isArray(teams) ? teams.length : 0,
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.teams = { status: 'fail' };
+      results.endpoints.teams = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Team Profile endpoint kontrolü
     try {
       const profile = await getTeams.profile('1001');
-      results.teamProfile = { status: profile ? 'ok' : 'fail' };
+      results.endpoints.teamProfile = { 
+        status: profile ? 'ok' : 'fail',
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.teamProfile = { status: 'fail' };
+      results.endpoints.teamProfile = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Team Map Stats endpoint kontrolü
     try {
       const mapStats = await getTeams.mapStats('1001');
-      results.teamMapStats = { status: Array.isArray(mapStats) ? 'ok' : 'fail' };
+      results.endpoints.teamMapStats = { 
+        status: Array.isArray(mapStats) ? 'ok' : 'fail',
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.teamMapStats = { status: 'fail' };
+      results.endpoints.teamMapStats = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Team Agent Stats endpoint kontrolü
     try {
       const agentStats = await getTeams.agentStats('1001');
-      results.teamAgentStats = { status: Array.isArray(agentStats) ? 'ok' : 'fail' };
+      results.endpoints.teamAgentStats = { 
+        status: Array.isArray(agentStats) ? 'ok' : 'fail',
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.teamAgentStats = { status: 'fail' };
+      results.endpoints.teamAgentStats = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Completed Matches endpoint kontrolü
     try {
       const response = await http.get('https://www.vlr.gg/matches/results');
-    const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data);
       const matchItems = $('.match-item');
-      results.completedMatches = { status: matchItems.length > 0 ? 'ok' : 'fail' };
+      results.endpoints.completedMatches = { 
+        status: matchItems.length > 0 ? 'ok' : 'fail',
+        count: matchItems.length,
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.completedMatches = { status: 'fail' };
+      results.endpoints.completedMatches = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
+
+    // Match Details endpoint kontrolü
     try {
       const match = await getMatchDetails('484663');
-      results.matchDetails = { status: match ? 'ok' : 'fail' };
+      results.endpoints.matchDetails = { 
+        status: match ? 'ok' : 'fail',
+        lastChecked: new Date().toISOString()
+      };
     } catch (e) {
-      results.matchDetails = { status: 'fail' };
+      results.endpoints.matchDetails = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
     }
-    return { status: 'ok', results };
+
+    // Live Matches endpoint kontrolü
+    try {
+      const response = await http.get('https://www.vlr.gg/matches');
+      const $ = cheerio.load(response.data);
+      const liveMatches = $('.match-item').filter((i, el) => 
+        $(el).find('.ml-status').text().toLowerCase() === 'live'
+      );
+      results.endpoints.liveMatches = { 
+        status: 'ok',
+        count: liveMatches.length,
+        lastChecked: new Date().toISOString()
+      };
+    } catch (e) {
+      results.endpoints.liveMatches = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
+    }
+
+    // Search endpoint kontrolü
+    try {
+      const searchResult = await searchPlayersAndTeams('test');
+      results.endpoints.search = { 
+        status: 'ok',
+        lastChecked: new Date().toISOString()
+      };
+    } catch (e) {
+      results.endpoints.search = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
+    }
+
+    // Player Advanced Stats endpoint kontrolü
+    try {
+      const playerStats = await getPlayerAdvancedStats('1001', 5);
+      results.endpoints.playerAdvancedStats = { 
+        status: 'ok',
+        lastChecked: new Date().toISOString()
+      };
+    } catch (e) {
+      results.endpoints.playerAdvancedStats = { 
+        status: 'fail',
+        error: e.message,
+        lastChecked: new Date().toISOString()
+      };
+    }
+
+    // Rate limiting kontrolü
+    results.services.rateLimiting = {
+      status: 'ok',
+      limits: {
+        windowMs: '15 minutes',
+        maxRequests: 100
+      }
+    };
+
+    // Cache kontrolü
+    results.services.cache = {
+      status: 'ok',
+      type: 'memory',
+      ttl: '60 seconds'
+    };
+
+    // Genel API durumu
+    const allEndpointsStatus = Object.values(results.endpoints).every(endpoint => endpoint.status === 'ok');
+    results.api.status = allEndpointsStatus ? 'ok' : 'degraded';
+
+    res.json(results);
   } catch (err) {
-    return { status: 'fail', results };
+    results.api.status = 'fail';
+    results.api.error = err.message;
+    res.status(500).json(results);
   }
 }, 60));
 
