@@ -2,6 +2,8 @@
 
 Bu proje, maç verilerini ve detaylarını sunan bir REST API'dir.
 
+Geçici olarak projenin deploy edildiği yer: https://valyticsapi-production.up.railway.app/
+
 ## Özellikler
 
 
