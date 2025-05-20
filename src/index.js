@@ -64,7 +64,23 @@ const swaggerOptions = {
 
 const swaggerSpec = swaggerJSDoc(swaggerOptions);
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
+  const swaggerSpecWithHost = {
+    ...swaggerSpec,
+    servers: [
+      {
+        url: `${req.protocol}://${req.get('host')}`,
+        description: 'Deployed server',
+      },
+      // İsteğe bağlı olarak localhost'u da tutabilirsiniz:
+      // {
+      //   url: `http://localhost:${PORT}`,
+      //   description: 'Local server',
+      // },
+    ],
+  };
+  swaggerUi.setup(swaggerSpecWithHost)(req, res, next);
+});
 
 // Redirect root URL to API Docs
 app.get('/', (req, res) => {
