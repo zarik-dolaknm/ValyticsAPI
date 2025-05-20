@@ -12,6 +12,7 @@ const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDeta
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4000;
 const DEBUG = process.env.DEBUG === 'true'; // DEBUG modunu çevre değişkeninden oku
 
