@@ -1041,4 +1041,219 @@ async function getPlayerAdvancedStats(playerId, matchLimit = 5) {
   };
 }
 
-module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats }; 
+async function calculateRosterStability(teamId) {
+  try {
+    console.log(`[DEBUG][rosterStability] Starting calculation for team ${teamId}`);
+    
+    // Cache key for the entire calculation
+    const cacheKey = `roster_stability_${teamId}`;
+    const cachedResult = cache.get(cacheKey);
+    if (cachedResult) {
+      console.log(`[DEBUG][rosterStability] Returning cached result for team ${teamId}`);
+      return cachedResult;
+    }
+
+    // Get team's recent matches (limit to last 10 for better performance)
+    const matches = await getTeamMatches(teamId);
+    const recentMatches = matches.slice(0, 20);
+    console.log(`[DEBUG][rosterStability] Using last ${recentMatches.length} matches for team ${teamId}`);
+    
+    if (!recentMatches || recentMatches.length === 0) {
+      throw new Error('No matches found for team');
+    }
+    
+    // Get current roster
+    const teamProfile = await getTeams.profile(teamId);
+    if (!teamProfile) {
+      throw new Error('Team profile not found');
+    }
+    
+    console.log(`[DEBUG][rosterStability] Current roster:`, teamProfile.roster.map(p => ({ id: p.id, name: p.name })));
+    const currentRoster = new Set(teamProfile.roster.map(p => p.id));
+    
+    // Track unique player changes
+    const allPlayers = new Set();
+    const newPlayers = new Set();
+    const leftPlayers = new Set();
+    let previousMatchPlayers = new Set();
+
+    // Enhanced team name normalization
+    const normalizeTeamName = (name) => {
+      if (!name) return '';
+      // Remove special characters and convert to lowercase
+      const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Handle common team name variations
+      const variations = {
+        'tl': ['teamliquid', 'liquid', 'tl'],
+        'fnc': ['fnatic', 'fnc'],
+        'th': ['teamheretics', 'heretics', 'th'],
+        'fut': ['futesports', 'fut'],
+        'bbl': ['bblesports', 'bbl'],
+        'mkoi': ['movistarkoi', 'koi', 'mkoi'],
+        'navi': ['natusvincere', 'navi'],
+        'kc': ['karminecorp', 'kc'],
+        'g2': ['g2esports', 'g2'],
+        'vitality': ['teamvitality', 'vitality', 'vit'],
+        'cloud9': ['cloud9', 'c9'],
+        'sentinels': ['sentinels', 'sen'],
+        'optic': ['opticgaming', 'optic', 'og'],
+        'faze': ['fazeclan', 'faze'],
+        'tsm': ['tsm', 'teamsolomid'],
+        'eg': ['evilempire', 'eg'],
+        '100t': ['100thieves', '100t'],
+        'c9': ['cloud9', 'c9'],
+        'sen': ['sentinels', 'sen'],
+        'og': ['opticgaming', 'optic', 'og']
+      };
+      
+      // Check if the normalized name matches any variations
+      for (const [key, values] of Object.entries(variations)) {
+        if (values.includes(normalized)) {
+          return key;
+        }
+      }
+      
+      return normalized;
+    };
+
+    const teamNameNormalized = normalizeTeamName(teamProfile.name);
+    const teamTagNormalized = normalizeTeamName(teamProfile.tag);
+    console.log(`[DEBUG][rosterStability] Team name normalized: ${teamNameNormalized}, tag normalized: ${teamTagNormalized}`);
+
+    // Process matches in batches of 5
+    const batchSize = 5;
+    const allMatchIds = recentMatches.map(m => m.id);
+    
+    // Process matches in batches
+    for (let i = 0; i < allMatchIds.length; i += batchSize) {
+      const batchIds = allMatchIds.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batchIds.map(async (matchId) => {
+          const cacheKey = `match_${matchId}_roster`;
+          let matchData = cache.get(cacheKey);
+          
+          if (!matchData) {
+            try {
+              const matchDetails = await getMatchDetails(matchId);
+              console.log(`[DEBUG][rosterStability] Match ${matchId} details:`, {
+                team1: matchDetails.teams.team1.name,
+                team2: matchDetails.teams.team2.name,
+                maps: matchDetails.maps.length
+              });
+              
+              const players = new Set();
+              
+              // Extract player IDs from all maps in the match
+              matchDetails.maps.forEach(map => {
+                console.log(`[DEBUG][rosterStability] Map ${map.name} players:`, map.players.map(p => ({
+                  id: p.playerId,
+                  name: p.name,
+                  team: p.team,
+                  normalizedTeam: normalizeTeamName(p.team)
+                })));
+                
+                map.players.forEach(player => {
+                  const playerTeamNormalized = normalizeTeamName(player.team);
+                  console.log(`[DEBUG][rosterStability] Checking player:`, {
+                    id: player.playerId,
+                    name: player.name,
+                    team: player.team,
+                    normalizedTeam: playerTeamNormalized,
+                    matches: playerTeamNormalized === teamNameNormalized || playerTeamNormalized === teamTagNormalized
+                  });
+                  
+                  // Check if player belongs to our team using either normalized name or tag
+                  if (player.playerId && (playerTeamNormalized === teamNameNormalized || playerTeamNormalized === teamTagNormalized)) {
+                    players.add(player.playerId);
+                    console.log(`[DEBUG][rosterStability] Found player ${player.playerId} for team ${player.team}`);
+                  }
+                });
+              });
+              
+              matchData = { players: [...players] };
+              console.log(`[DEBUG][rosterStability] Match ${matchId} players:`, [...players]);
+              // Cache for 1 hour
+              cache.set(cacheKey, matchData, 3600);
+            } catch (err) {
+              console.error(`[ERROR][rosterStability] Error fetching match ${matchId}:`, err);
+              return null;
+            }
+          }
+          
+          return matchData;
+        })
+      );
+      
+      // Process batch results
+      batchResults.forEach(matchData => {
+        if (matchData) {
+          const matchPlayers = new Set(matchData.players);
+          
+          // Add all players to the set of all players we've seen
+          matchPlayers.forEach(id => allPlayers.add(id));
+          
+          // If this is not the first match, compare with previous match
+          if (previousMatchPlayers.size > 0) {
+            // Find players who left (in previous match but not in this match)
+            previousMatchPlayers.forEach(id => {
+              if (!matchPlayers.has(id)) {
+                leftPlayers.add(id);
+                console.log(`[DEBUG][rosterStability] Player ${id} left the team`);
+              }
+            });
+            
+            // Find new players (in this match but not in previous match)
+            matchPlayers.forEach(id => {
+              if (!previousMatchPlayers.has(id)) {
+                newPlayers.add(id);
+                console.log(`[DEBUG][rosterStability] New player ${id} joined the team`);
+              }
+            });
+          }
+          
+          // Update previous match players for next iteration
+          previousMatchPlayers = new Set(matchPlayers);
+        }
+      });
+    }
+    
+    // Calculate total unique changes
+    const rosterChanges = newPlayers.size + leftPlayers.size;
+    const maxPossibleChanges = (recentMatches.length - 1) * 5; // 5 players per team, between matches
+    
+    if (maxPossibleChanges === 0) {
+      throw new Error('No valid matches found to calculate stability');
+    }
+    
+    // Calculate stability score (ensure it's between 0 and 1)
+    const stabilityScore = Math.max(0, Math.min(1, 1 - (rosterChanges / maxPossibleChanges)));
+    
+    console.log(`[DEBUG][rosterStability] Calculation details:`, {
+      newPlayers: [...newPlayers],
+      leftPlayers: [...leftPlayers],
+      allPlayers: [...allPlayers],
+      rosterChanges,
+      maxPossibleChanges,
+      stabilityScore
+    });
+
+    const result = {
+      teamId,
+      teamName: teamProfile.name,
+      currentRoster: [...currentRoster],
+      rosterChanges,
+      maxPossibleChanges,
+      stabilityScore: stabilityScore.toFixed(2)
+    };
+
+    // Cache the result for 1 hour
+    cache.set(cacheKey, result, 3600);
+    
+    return result;
+  } catch (err) {
+    console.error(`[ERROR][rosterStability] Error calculating roster stability:`, err);
+    throw err;
+  }
+}
+
+module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability }; 

@@ -508,6 +508,31 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
             -   `last10BestMap`: Son 10 maçta en yüksek winrate'e sahip harita (en az 2 maç)
             -   `last10WorstMap`: Son 10 maçta en düşük winrate'e sahip harita (en az 2 maç)
 
+### Takımın Kadro Stabilitesini Getirme
+
+-   `GET /api/teams/:id/roster-stability`
+    -   Belirli bir takımın kadro stabilitesini hesaplar ve döndürür.
+    -   **URL Parametreleri:**
+        -   `id` (gerekli): Takım ID'si (Örnek: 474).
+    -   **Dönen Veri Yapısı:**
+        ```json
+        {
+          "teamId": "474",
+          "teamName": "Team Name",
+          "currentRoster": ["123", "124", "125", "126", "127"],
+          "rosterChanges": 3,
+          "maxPossibleChanges": 20,
+          "stabilityScore": "0.85"
+        }
+        ```
+    -   **Açıklama:**
+        -   `currentRoster`: Mevcut kadrodaki oyuncu ID'leri
+        -   `rosterChanges`: Toplam kadro değişikliği sayısı (yeni gelen + ayrılan oyuncular)
+        -   `maxPossibleChanges`: Maksimum olası değişiklik sayısı (maç sayısı × 5)
+        -   `stabilityScore`: Kadro stabilite skoru (1 - (rosterChanges / maxPossibleChanges))
+            -   1'e yakın değerler daha stabil kadroyu gösterir
+            -   0'a yakın değerler daha fazla değişiklik olduğunu gösterir
+
 ### API Sağlık Kontrolü (Health Check)
 
 -   `GET /api/health`

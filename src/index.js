@@ -7,7 +7,7 @@ const axiosRateLimit = require('axios-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
-const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats } = require('./utils');
+const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability } = require('./utils');
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
@@ -543,6 +543,51 @@ app.get('/', (req, res) => {
  *           application/json:
  *             example:
  *               error: 'Failed to fetch advanced stats'
+ */
+
+/**
+ * @swagger
+ * /api/teams/{id}/roster-stability:
+ *   get:
+ *     summary: Get team's roster stability
+ *     description: Calculates and returns the roster stability score for a team based on their recent matches
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Team ID
+ *     responses:
+ *       200:
+ *         description: Team roster stability information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 teamId:
+ *                   type: string
+ *                   description: Team ID
+ *                 teamName:
+ *                   type: string
+ *                   description: Team name
+ *                 currentRoster:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: List of current player IDs
+ *                 rosterChanges:
+ *                   type: integer
+ *                   description: Total number of roster changes (new players + left players)
+ *                 maxPossibleChanges:
+ *                   type: integer
+ *                   description: Maximum possible number of changes (matches × 5)
+ *                 stabilityScore:
+ *                   type: string
+ *                   description: Roster stability score (1 - (rosterChanges / maxPossibleChanges))
+ *       500:
+ *         description: Server error
  */
 
 // Ana endpoint
@@ -1093,6 +1138,20 @@ app.get('/api/teams/:id/agents-stats', async (req, res) => {
     res.json(stats);
   } catch (err) {
     handleHttpError(res, err, 'Failed to fetch team agent stats');
+  }
+});
+
+app.get('/api/teams/:id/roster-stability', async (req, res) => {
+  try {
+    const stability = await calculateRosterStability(req.params.id);
+    res.json(stability);
+  } catch (err) {
+    console.error(`[ERROR] Roster stability calculation failed:`, err);
+    const errorMessage = err.message || 'Failed to calculate roster stability';
+    res.status(500).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
