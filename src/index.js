@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const rateLimit = require('express-rate-limit');
-const axiosRateLimit = require('axios-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
@@ -16,15 +14,8 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4000;
 const DEBUG = process.env.DEBUG === 'true'; // DEBUG modunu çevre değişkeninden oku
 
-// Rate limiting ayarları
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 dakika
-  max: 100, // IP başına maksimum istek sayısı
-  message: 'Too many requests from this IP, please try again later.'
-});
-
-// Axios için rate limiting ve headers
-const http = axiosRateLimit(axios.create({
+// Axios için headers
+const http = axios.create({
   headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -32,14 +23,10 @@ const http = axiosRateLimit(axios.create({
     'Connection': 'keep-alive',
     'Upgrade-Insecure-Requests': '1'
   }
-}), { 
-  maxRPS: 2, // Saniyede maksimum 2 istek
-  maxRequests: 100 // Toplam maksimum istek sayısı
 });
 
 app.use(cors());
 app.use(express.json());
-app.use(apiLimiter);
 
 // Swagger/OpenAPI ayarları
 const swaggerDefinition = {
@@ -54,6 +41,14 @@ const swaggerDefinition = {
       url: `http://localhost:${PORT}`,
       description: 'Local server',
     },
+  ],
+  tags: [
+    { name: 'Matches', description: 'Valorant maçları ile ilgili endpointler' },
+    { name: 'Events', description: 'Valorant etkinlikleri ile ilgili endpointler' },
+    { name: 'Teams', description: 'Valorant takımları ile ilgili endpointler' },
+    { name: 'Players', description: 'Valorant oyuncuları ile ilgili endpointler' },
+    { name: 'Search', description: 'Arama endpointi' },
+    { name: 'Health', description: 'Sağlık kontrolü' },
   ],
 };
 
@@ -92,6 +87,8 @@ app.get('/', (req, res) => {
  * /api/matches/completed:
  *   get:
  *     summary: Tamamlanmış maçları getirir
+ *     tags:
+ *       - Matches
  *     parameters:
  *       - in: query
  *         name: limit
@@ -110,6 +107,8 @@ app.get('/', (req, res) => {
  * /api/matches/{id}:
  *   get:
  *     summary: Maç detaylarını getirir
+ *     tags:
+ *       - Matches
  *     parameters:
  *       - in: path
  *         name: id
@@ -131,6 +130,8 @@ app.get('/', (req, res) => {
  * /api/events:
  *   get:
  *     summary: Etkinlik listesini getirir
+ *     tags:
+ *       - Events
  *     responses:
  *       200:
  *         description: Etkinlik listesi
@@ -143,6 +144,8 @@ app.get('/', (req, res) => {
  * /api/events/{eventId}/matches:
  *   get:
  *     summary: Bir etkinliğin maçlarını getirir
+ *     tags:
+ *       - Events
  *     parameters:
  *       - in: path
  *         name: eventId
@@ -162,6 +165,8 @@ app.get('/', (req, res) => {
  * /api/players/{id}:
  *   get:
  *     summary: Oyuncu detaylarını getirir
+ *     tags:
+ *       - Players
  *     parameters:
  *       - in: path
  *         name: id
@@ -186,6 +191,8 @@ app.get('/', (req, res) => {
  * /api/matches/upcoming:
  *   get:
  *     summary: Yaklaşan (Upcoming) Valorant maçlarını getirir
+ *     tags:
+ *       - Matches
  *     responses:
  *       200:
  *         description: Sadece upcoming (yaklaşan) maçlar listesi
@@ -214,6 +221,8 @@ app.get('/', (req, res) => {
  * /api/matches/live:
  *   get:
  *     summary: Şu anda canlı (LIVE) oynanan Valorant maçlarını getirir
+ *     tags:
+ *       - Matches
  *     responses:
  *       200:
  *         description: Sadece canlı (live) maçlar listesi
@@ -242,6 +251,8 @@ app.get('/', (req, res) => {
  * /api/teams:
  *   get:
  *     summary: Belirli bir bölgedeki takımların listesini getirir
+ *     tags:
+ *       - Teams
  *     parameters:
  *       - in: query
  *         name: region
@@ -280,6 +291,8 @@ app.get('/', (req, res) => {
  * /api/teams/{id}:
  *   get:
  *     summary: Takım profili ve detaylarını getirir
+ *     tags:
+ *       - Teams
  *     parameters:
  *       - in: path
  *         name: id
@@ -345,6 +358,8 @@ app.get('/', (req, res) => {
  * /api/teams/{id}/maps-stats:
  *   get:
  *     summary: Takımın harita istatistiklerini getirir
+ *     tags:
+ *       - Teams
  *     parameters:
  *       - in: path
  *         name: id
@@ -387,6 +402,8 @@ app.get('/', (req, res) => {
  * /api/teams/{id}/agents-stats:
  *   get:
  *     summary: Takımın ajan istatistiklerini getirir
+ *     tags:
+ *       - Teams
  *     parameters:
  *       - in: path
  *         name: id
@@ -413,6 +430,8 @@ app.get('/', (req, res) => {
  * /api/health:
  *   get:
  *     summary: API sağlık kontrolü (ana fonksiyonların çalışırlığını topluca test eder)
+ *     tags:
+ *       - Health
  *     responses:
  *       200:
  *         description: Sağlık durumu ve test sonuçları
@@ -437,6 +456,8 @@ app.get('/', (req, res) => {
  * /api/search:
  *   get:
  *     summary: Oyuncu ve takım araması yapar
+ *     tags:
+ *       - Search
  *     parameters:
  *       - in: query
  *         name: q
@@ -472,6 +493,8 @@ app.get('/', (req, res) => {
  * /api/players/{id}/advanced-stats:
  *   get:
  *     summary: Bir oyuncunun son X maçtaki gelişmiş istatistiklerini döndürür
+ *     tags:
+ *       - Players
  *     parameters:
  *       - in: path
  *         name: id
@@ -549,8 +572,10 @@ app.get('/', (req, res) => {
  * @swagger
  * /api/teams/{id}/roster-stability:
  *   get:
- *     summary: Get team's roster stability
+ *     summary: Takımın kadro stabilitesini getirir
  *     description: Calculates and returns the roster stability score for a team based on their recent matches
+ *     tags:
+ *       - Teams
  *     parameters:
  *       - in: path
  *         name: id
@@ -607,7 +632,7 @@ app.get('/', (req, res) => {
 // Tamamlanmış maçları getiren endpoint
 app.get('/api/matches/completed', async (req, res) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit) : 10; // Varsayılan olarak 10 maç
+    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
     let matches = [];
     let page = 1;
     let hasMore = true;
@@ -635,11 +660,17 @@ app.get('/api/matches/completed', async (req, res) => {
           const team2Score = cleanText($(matchElement).find('.match-item-vs-team-score').last().text());
           const event = cleanText($(matchElement).find('.match-item-event').text());
           const date = cleanText($(matchElement).find('.match-item-time').text());
+
           matches.push({
-            id: matchId,
             teams: {
-              team1: { name: team1Name, score: team1Score },
-              team2: { name: team2Name, score: team2Score }
+              team1: { 
+                name: team1Name, 
+                score: team1Score 
+              },
+              team2: { 
+                name: team2Name, 
+                score: team2Score 
+              }
             },
             event: event,
             date: date,
@@ -1009,19 +1040,23 @@ app.get('/api/matches/upcoming', async (req, res) => {
       const date = cleanText($(matchElement).find('.match-item-time').text());
       const status = cleanText($(matchElement).find('.ml-status').text());
       const eta = cleanText($(matchElement).find('.ml-eta').text());
-      const icon = $(matchElement).find('.match-item-icon img').attr('src');
+
       matches.push({
-        id: matchId,
         teams: {
-          team1: { name: team1Name, score: team1Score },
-          team2: { name: team2Name, score: team2Score }
+          team1: { 
+            name: team1Name, 
+            score: team1Score 
+          },
+          team2: { 
+            name: team2Name, 
+            score: team2Score 
+          }
         },
         event: event,
         stage: stage,
         date: date,
         status: status,
         eta: eta,
-        icon: icon ? `https://owcdn.net${icon}` : null,
         url: matchLink ? `https://www.vlr.gg${matchLink}` : null
       });
     });
@@ -1055,19 +1090,23 @@ app.get('/api/matches/live', async (req, res) => {
       const date = cleanText($(matchElement).find('.match-item-time').text());
       const status = cleanText($(matchElement).find('.ml-status').text());
       const eta = cleanText($(matchElement).find('.ml-eta').text());
-      const icon = $(matchElement).find('.match-item-icon img').attr('src');
+
       matches.push({
-        id: matchId,
         teams: {
-          team1: { name: team1Name, score: team1Score },
-          team2: { name: team2Name, score: team2Score }
+          team1: { 
+            name: team1Name, 
+            score: team1Score 
+          },
+          team2: { 
+            name: team2Name, 
+            score: team2Score 
+          }
         },
         event: event,
         stage: stage,
         date: date,
         status: status,
         eta: eta,
-        icon: icon ? `https://owcdn.net${icon}` : null,
         url: matchLink ? `https://www.vlr.gg${matchLink}` : null
       });
     });
@@ -1331,15 +1370,6 @@ app.get('/api/health', withCache('health', async (req, res) => {
         lastChecked: new Date().toISOString()
       };
     }
-
-    // Rate limiting kontrolü
-    results.services.rateLimiting = {
-      status: 'ok',
-      limits: {
-        windowMs: '15 minutes',
-        maxRequests: 100
-      }
-    };
 
     // Cache kontrolü
     results.services.cache = {

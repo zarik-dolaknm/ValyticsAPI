@@ -278,6 +278,13 @@ async function getTeamMatches(teamId) {
 async function getMatchDetails(matchId) {
   const response = await http.get(`https://www.vlr.gg/${matchId}`);
   const $ = cheerio.load(response.data);
+  
+  // Takım ID'lerini al
+  const team1Link = $('.match-header-vs .match-header-link.mod-1').attr('href');
+  const team2Link = $('.match-header-vs .match-header-link.mod-2').attr('href');
+  const team1Id = team1Link ? team1Link.split('/')[2] : null;
+  const team2Id = team2Link ? team2Link.split('/')[2] : null;
+
   const team1Name = $('.match-header-vs .match-header-link.mod-1 .wf-title-med').text().trim();
   const team2Name = $('.match-header-vs .match-header-link.mod-2 .wf-title-med').text().trim();
   const team1Score = $('.match-header-vs-score .match-header-vs-score-winner').text().trim();
@@ -289,8 +296,16 @@ async function getMatchDetails(matchId) {
   const matchDetails = {
     id: matchId,
     teams: {
-      team1: { name: team1Name, score: team1Score },
-      team2: { name: team2Name, score: team2Score }
+      team1: { 
+        id: team1Id,
+        name: team1Name, 
+        score: team1Score 
+      },
+      team2: { 
+        id: team2Id,
+        name: team2Name, 
+        score: team2Score 
+      }
     },
     status: $('.match-header-status').text().trim(),
     event: {
