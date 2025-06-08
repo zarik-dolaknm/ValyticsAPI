@@ -782,8 +782,8 @@ app.get('/api/events', async (req, res) => {
 
 // Oyuncu detaylarını getiren endpoint
 app.get('/api/players/:id', async (req, res) => {
+  const playerId = req.params.id;
   try {
-    const playerId = req.params.id;
     const timespan = req.query.timespan; // timespan query parametresini al
 
     let playerUrl = `https://www.vlr.gg/player/${playerId}/`;
@@ -964,43 +964,104 @@ app.get('/api/players/:id', async (req, res) => {
     }
 
     // Agent İstatistikleri - Tablo scrape etme
-    const advStatsTables = $$('.wf-table-inset.mod-adv-stats, .mod-adv-stats');
+    const advStatsTables = $('.wf-table');
+    let totalStats = {
+        agent: "total",
+        use: "",
+        rnd: 0,
+        rating: 0,
+        acs: 0,
+        kd: 0,
+        adr: 0,
+        kast: 0,
+        kpr: 0,
+        apr: 0,
+        fkpr: 0,
+        fdpr: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        fk: 0,
+        fd: 0
+    };
+    let agentCount = 0;
 
     if (advStatsTables.length > 0) {
         if (DEBUG) console.log("Agent Stats Table found.");
         // tbody içindeki her bir satırı işle
         advStatsTables.each((_, table) => {
-            $$(table).find('tr').each((__, row) => {
-                const playerCell = $$(row).find('td').eq(0);
-                const playerName = cleanText(playerCell.find('div').first().text());
-                console.log('[DEBUG] Table row playerName:', playerName);
+            $(table).find('tbody tr').each((__, row) => {
+                const agentImg = $(row).find('td').eq(0).find('img');
+                const agentName = agentImg.attr('alt');
+                if (DEBUG) console.log('[DEBUG] Processing agent:', agentName);
+                
+                const useText = $(row).find('td').eq(1).text().trim();
+                const useMatch = useText.match(/\((\d+)\)/);
+                const useCount = useMatch ? parseInt(useMatch[1]) : 0;
+                
                 const stats = {
-                    use: $$(row).find('td').eq(1).text().trim(),
-                    rnd: $$(row).find('td').eq(2).text().trim(),
-                    rating: $$(row).find('td').eq(3).text().trim(),
-                    acs: $$(row).find('td').eq(4).text().trim(),
-                    kd: $$(row).find('td').eq(5).text().trim(),
-                    adr: $$(row).find('td').eq(6).text().trim(),
-                    kast: $$(row).find('td').eq(7).text().trim(),
-                    kpr: $$(row).find('td').eq(8).text().trim(),
-                    apr: $$(row).find('td').eq(9).text().trim(),
-                    fkpr: $$(row).find('td').eq(10).text().trim(),
-                    fdpr: $$(row).find('td').eq(11).text().trim(),
-                    kills: $$(row).find('td').eq(12).text().trim(),
-                    deaths: $$(row).find('td').eq(13).text().trim(),
-                    assists: $$(row).find('td').eq(14).text().trim(),
-                    fk: $$(row).find('td').eq(15).text().trim(),
-                    fd: $$(row).find('td').eq(16).text().trim()
+                    use: useText,
+                    rnd: parseInt($(row).find('td').eq(2).text().trim()),
+                    rating: parseFloat($(row).find('td').eq(3).text().trim()),
+                    acs: parseFloat($(row).find('td').eq(4).text().trim()),
+                    kd: parseFloat($(row).find('td').eq(5).text().trim()),
+                    adr: parseFloat($(row).find('td').eq(6).text().trim()),
+                    kast: parseFloat($(row).find('td').eq(7).text().trim().replace('%', '')),
+                    kpr: parseFloat($(row).find('td').eq(8).text().trim()),
+                    apr: parseFloat($(row).find('td').eq(9).text().trim()),
+                    fkpr: parseFloat($(row).find('td').eq(10).text().trim()),
+                    fdpr: parseFloat($(row).find('td').eq(11).text().trim()),
+                    kills: parseInt($(row).find('td').eq(12).text().trim()),
+                    deaths: parseInt($(row).find('td').eq(13).text().trim()),
+                    assists: parseInt($(row).find('td').eq(14).text().trim()),
+                    fk: parseInt($(row).find('td').eq(15).text().trim()),
+                    fd: parseInt($(row).find('td').eq(16).text().trim())
                 };
-                if(playerName) {
+
+                // Toplam değerleri hesapla
+                totalStats.use = `${parseInt(totalStats.use.replace(/[()]/g, '') || 0) + useCount}`;
+                totalStats.rnd += stats.rnd;
+                totalStats.rating += stats.rating;
+                totalStats.acs += stats.acs;
+                totalStats.kd += stats.kd;
+                totalStats.adr += stats.adr;
+                totalStats.kast += stats.kast;
+                totalStats.kpr += stats.kpr;
+                totalStats.apr += stats.apr;
+                totalStats.fkpr += stats.fkpr;
+                totalStats.fdpr += stats.fdpr;
+                totalStats.kills += stats.kills;
+                totalStats.deaths += stats.deaths;
+                totalStats.assists += stats.assists;
+                totalStats.fk += stats.fk;
+                totalStats.fd += stats.fd;
+                agentCount++;
+
+                if(agentName) {
                     playerDetails.agentStats.push({
-                        agent: playerName,
+                        agent: agentName,
                         ...stats
                     });
-                    if (DEBUG) console.log(`Added agent stats for: ${playerName}`);
+                    if (DEBUG) console.log(`Added agent stats for: ${agentName}`);
                 }
             });
         });
+
+        // Ortalama değerleri hesapla
+        if (agentCount > 0) {
+            totalStats.rating = (totalStats.rating / agentCount).toFixed(2);
+            totalStats.acs = (totalStats.acs / agentCount).toFixed(1);
+            totalStats.kd = (totalStats.kd / agentCount).toFixed(2);
+            totalStats.adr = (totalStats.adr / agentCount).toFixed(1);
+            totalStats.kast = (totalStats.kast / agentCount).toFixed(0) + '%';
+            totalStats.kpr = (totalStats.kpr / agentCount).toFixed(2);
+            totalStats.apr = (totalStats.apr / agentCount).toFixed(2);
+            totalStats.fkpr = (totalStats.fkpr / agentCount).toFixed(2);
+            totalStats.fdpr = (totalStats.fdpr / agentCount).toFixed(2);
+        }
+
+        // Total stats'i listenin başına ekle
+        playerDetails.agentStats.unshift(totalStats);
     } else {
         if (DEBUG) console.log("Agent Stats Table not found.");
     }
