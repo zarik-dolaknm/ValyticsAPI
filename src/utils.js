@@ -285,8 +285,14 @@ async function getMatchDetails(matchId) {
   const team1Id = team1Link ? team1Link.split('/')[2] : null;
   const team2Id = team2Link ? team2Link.split('/')[2] : null;
 
-  const team1Name = $('.match-header-vs .match-header-link.mod-1 .wf-title-med').text().trim();
-  const team2Name = $('.match-header-vs .match-header-link.mod-2 .wf-title-med').text().trim();
+  const team1Name = cleanText($('.match-header-vs .match-header-link.mod-1 .wf-title-med').text().trim())
+    .replace(/\s+/g, ' ')
+    .replace(/\(([^)]+)\)/g, '($1)')
+    .trim();
+  const team2Name = cleanText($('.match-header-vs .match-header-link.mod-2 .wf-title-med').text().trim())
+    .replace(/\s+/g, ' ')
+    .replace(/\(([^)]+)\)/g, '($1)')
+    .trim();
   const team1Score = $('.match-header-vs-score .match-header-vs-score-winner').text().trim();
   const team2Score = $('.match-header-vs-score .match-header-vs-score-loser').text().trim();
   const rawSeriesText = $('.match-header-event-series').text();
@@ -315,119 +321,242 @@ async function getMatchDetails(matchId) {
     date: cleanedDate,
     maps: []
   };
+
+  // İlk geçiş: Temel map bilgilerini (isim, skor, süre) ve gameId'yi topla
+  // Bu, her bir map'in kendi div.vm-stats-game elementini işaret etmemizi sağlar.
   $('.vm-stats-game-header').each((i, mapHeader) => {
     const rawMapText = $(mapHeader).find('.map').text();
     const cleanedMapText = rawMapText.replace(/\s+/g, ' ').trim();
     const mapName = cleanedMapText.split('PICK')[0].trim();
     const mapScore = $(mapHeader).find('.score').text().trim();
     const mapDuration = $(mapHeader).find('.map-duration').text().trim();
-    matchDetails.maps.push({
-      name: mapName,
-      score: mapScore,
-      duration: mapDuration,
-      players: []
-    });
-  });
-  // --- ROUND BREAKDOWN ---
-  // Her map için .vlr-rounds divini bul ve round breakdown ekle
-  $('.vlr-rounds').each((mapIdx, roundsDiv) => {
-    const $rounds = $(roundsDiv);
-    // Takım isimlerini sırayla al
-    const teamNames = $rounds.find('.vlr-rounds-row .team').map((i, el) => $(el).text().trim()).get();
-    if (teamNames.length < 2) return;
-    const [team1, team2] = teamNames;
-    let atkRoundsWon = { [team1]: 0, [team2]: 0 };
-    let defRoundsWon = { [team1]: 0, [team2]: 0 };
-    // Her round için .vlr-rounds-row-col (ilk col hariç) gez
-    $rounds.find('.vlr-rounds-row-col').each((i, col) => {
-      // Sadece round numarası olanları ve spacing olmayanları al
-      if ($(col).hasClass('mod-spacing')) return;
-      const roundNum = $(col).find('.rnd-num').text().trim();
-      if (!roundNum) return;
-      // Her roundda iki .rnd-sq var: ilki team1 (CT), ikincisi team2 (T)
-      const sqs = $(col).find('.rnd-sq');
-      if (sqs.length < 2) return;
-      // mod-win mod-ct veya mod-win mod-t class'ına bak
-      if ($(sqs[0]).hasClass('mod-win')) {
-        if ($(sqs[0]).hasClass('mod-ct')) defRoundsWon[team1]++;
-        if ($(sqs[0]).hasClass('mod-t')) atkRoundsWon[team1]++;
-      }
-      if ($(sqs[1]).hasClass('mod-win')) {
-        if ($(sqs[1]).hasClass('mod-ct')) defRoundsWon[team2]++;
-        if ($(sqs[1]).hasClass('mod-t')) atkRoundsWon[team2]++;
-      }
-    });
-    // Sonuçları ilgili map'e ekle
-    if (matchDetails.maps[mapIdx]) {
-      matchDetails.maps[mapIdx].roundBreakdown = {
-        [team1]: { atkRoundsWon: atkRoundsWon[team1], defRoundsWon: defRoundsWon[team1] },
-        [team2]: { atkRoundsWon: atkRoundsWon[team2], defRoundsWon: defRoundsWon[team2] }
-      };
-    }
-  });
-  const allTables = $('table.wf-table-inset');
-  const playerStatTables = allTables.filter('.mod-overview');
-  let mapIndex = 0;
-  playerStatTables.each((i, playerTableElement) => {
-    const playerRows = $(playerTableElement).find('tbody tr');
-    if (playerRows.length > 0 && mapIndex < matchDetails.maps.length) {
-      const players = [];
-      playerRows.each((j, playerRow) => {
-        const playerName = $(playerRow).find('.mod-player .text-of').text().trim();
-        const agent = $(playerRow).find('.mod-agents img').attr('alt');
-        const teamName = $(playerRow).find('.mod-player .ge-text-light').text().trim();
-        const playerLinkElement = $(playerRow).find('.mod-player a');
-        const playerHref = playerLinkElement.attr('href');
-        const playerId = playerHref ? playerHref.split('/')[2] : null;
-        const playerUrl = playerHref ? `https://www.vlr.gg${playerHref}` : null;
-        const stats = {
-          team: teamName || 'Unknown Team',
-          name: playerName,
-          agent: agent,
-          acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-both').text().trim(),
-          kills: $(playerRow).find('.mod-vlr-kills .side.mod-both').text().trim(),
-          deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-both').text().replace(/\//g, '').trim(),
-          assists: $(playerRow).find('.mod-vlr-assists .side.mod-both').text().trim(),
-          kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-both').text().trim(),
-          adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-both').text().trim(),
-          hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-both').text().trim(),
-          fk: $(playerRow).find('.mod-fb .side.mod-both').text().trim(),
-          fd: $(playerRow).find('.mod-fd .side.mod-both').text().trim(),
-          plusMinus: $(playerRow).find('.mod-kd-diff .side.mod-both').text().trim(),
-          fkFd: $(playerRow).find('.mod-fk-diff .side.mod-both').text().trim(),
-          clutch: 'N/A'
-        };
-        const roundStats = {
-          attack: {
-            acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-t').text().trim(),
-            kills: $(playerRow).find('.mod-vlr-kills .side.mod-t').text().trim(),
-            deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-t').text().trim(),
-            assists: $(playerRow).find('.mod-vlr-assists .side.mod-t').text().trim(),
-            kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-t').text().trim(),
-            adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-t').text().trim(),
-            hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-t').text().trim()
-          },
-          defense: {
-            acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-ct').text().trim(),
-            kills: $(playerRow).find('.mod-vlr-kills .side.mod-ct').text().trim(),
-            deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-ct').text().trim(),
-            assists: $(playerRow).find('.mod-vlr-assists .side.mod-ct').text().trim(),
-            kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-ct').text().trim(),
-            adr: $(playerRow).find('.mod-stat.mod-combat .side.mod-ct').text().trim(),
-            hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-ct').text().trim()
-          }
-        };
-        players.push({ ...stats, roundStats, playerId, playerUrl });
+
+    // data-game-id'yi üst .vm-stats-game divinden al
+    const gameId = $(mapHeader).closest('.vm-stats-game').attr('data-game-id');
+
+    // Sadece gerçek mapleri (tüm mapler özeti olmayanları) ve geçersiz gameId'si olmayanları push et
+    if (gameId !== 'all' && gameId) {
+      matchDetails.maps.push({
+        name: mapName,
+        score: mapScore,
+        duration: mapDuration,
+        players: [], // Bir sonraki adımda doldurulacak
+        roundBreakdown: {}, // Bir sonraki adımda doldurulacak
+        comeback: 'None', // Varsayılan olarak None
+        gameId: gameId // Geçici, tam oyun detaylarına bağlamak için
       });
-      matchDetails.maps[mapIndex].players = players;
-      mapIndex++;
     }
   });
-  matchDetails.additionalInfo = {
-    patch: $('.match-header-patch').text().trim(),
-    vod: $('.match-vod-link').attr('href'),
-    streams: $('.match-streams a').map((i, el) => $(el).attr('href')).get()
-  };
+
+  // İkinci geçiş: Her map için oyuncu istatistiklerini, round breakdown'ı ve comeback bilgisini doldur
+  // Şimdi doğrudan .vm-stats-game divleri üzerinde döneceğiz.
+  $('.vm-stats-game').each((i, gameDiv) => {
+    const $gameDiv = $(gameDiv);
+    const gameId = $gameDiv.attr('data-game-id');
+
+    // "All Maps" özet istatistik divini veya geçersiz gameId'yi atla
+    if (gameId === 'all' || !gameId) {
+      return;
+    }
+
+    // gameId kullanarak matchDetails.maps dizisindeki ilgili map objesini bul
+    const currentMap = matchDetails.maps.find(map => map.gameId === gameId);
+
+    if (!currentMap) {
+      // Bu map başlığı bulunamadı veya filtrelendi (örneğin ilk aşamada 'all' olduğu için atlandı)
+      return;
+    }
+
+    // --- ROUND BREAKDOWN ve COMEBACK HESAPLAMA ---
+    const $rounds = $gameDiv.find('.vlr-rounds');
+    if ($rounds.length > 0) {
+      const teamNamesInRoundBreakdown = $rounds.find('.vlr-rounds-row .team').map((j, el) => $(el).text().trim()).get();
+      
+      if (teamNamesInRoundBreakdown.length >= 2) {
+        const [rbTeam1Short, rbTeam2Short] = teamNamesInRoundBreakdown;
+
+        // Round breakdown'daki kısa isimleri, maç detaylarındaki tam isimlerle eşleştir
+        // Normalize edilmiş isimleri kullanarak daha güvenilir bir eşleşme yap
+        const normalizeForComparison = (name) => cleanText(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const team1FullNormalized = normalizeForComparison(matchDetails.teams.team1.name);
+        const team2FullNormalized = normalizeForComparison(matchDetails.teams.team2.name);
+        const rbTeam1Normalized = normalizeForComparison(rbTeam1Short);
+        const rbTeam2Normalized = normalizeForComparison(rbTeam2Short);
+
+        let mapTeam1Full = null; // round breakdown'daki ilk takımın tam adı
+        let mapTeam2Full = null; // round breakdown'daki ikinci takımın tam adı
+
+        // Basit bir kontrol ile eşleştirme
+        if (team1FullNormalized.includes(rbTeam1Normalized) || rbTeam1Normalized.includes(team1FullNormalized)) {
+            mapTeam1Full = matchDetails.teams.team1.name;
+            mapTeam2Full = matchDetails.teams.team2.name;
+        } else if (team2FullNormalized.includes(rbTeam1Normalized) || rbTeam1Normalized.includes(team2FullNormalized)) {
+            mapTeam1Full = matchDetails.teams.team2.name;
+            mapTeam2Full = matchDetails.teams.team1.name;
+        } else {
+          // Eğer eşleşme bulunamazsa, varsayılan olarak team1Short'u matchDetails.teams.team1.name olarak al
+          // Bu durum nadir olmalı, ancak sağlamlık için eklendi.
+          mapTeam1Full = matchDetails.teams.team1.name;
+          mapTeam2Full = matchDetails.teams.team2.name;
+        }
+
+        let atkRoundsWon = { [mapTeam1Full]: 0, [mapTeam2Full]: 0 };
+        let defRoundsWon = { [mapTeam1Full]: 0, [mapTeam2Full]: 0 };
+
+        let currentRoundScore1 = 0; // mapTeam1Full'ın anlık skoru
+        let currentRoundScore2 = 0; // mapTeam2Full'ın anlık skoru
+        let maxDeficitForMapTeam1 = 0; // mapTeam1Full'ın en fazla kaç round geriye düştüğü
+        let maxDeficitForMapTeam2 = 0; // mapTeam2Full'ın en fazla kaç round geriye düştüğü
+        const comebackThreshold = 5; // Geri dönüş için gereken minimum round farkı
+
+        $rounds.find('.vlr-rounds-row-col').each((j, col) => {
+          if ($(col).hasClass('mod-spacing')) return; // Spacing divlerini atla
+          const roundNum = $(col).find('.rnd-num').text().trim();
+          if (!roundNum) return; // Round numarası olmayanları atla
+
+          const sqs = $(col).find('.rnd-sq');
+          if (sqs.length < 2) return; // Yetersiz sqs divi olanları atla
+
+          let roundWinnerShort = null;
+          let winnerIsTeam1 = false; // roundBreakdown'daki ilk takım mı kazandı
+          
+          if ($(sqs[0]).hasClass('mod-win')) {
+            // İlk takım (CT veya T) kazandı
+            if ($(sqs[0]).hasClass('mod-ct')) {
+              defRoundsWon[mapTeam1Full]++;
+            } else if ($(sqs[0]).hasClass('mod-t')) {
+              atkRoundsWon[mapTeam1Full]++;
+            }
+            currentRoundScore1++;
+            winnerIsTeam1 = true;
+          } else if ($(sqs[1]).hasClass('mod-win')) {
+            // İkinci takım (CT veya T) kazandı
+            if ($(sqs[1]).hasClass('mod-ct')) {
+              defRoundsWon[mapTeam2Full]++;
+            } else if ($(sqs[1]).hasClass('mod-t')) {
+              atkRoundsWon[mapTeam2Full]++;
+            }
+            currentRoundScore2++;
+            winnerIsTeam1 = false;
+          }
+
+          // Anlık skor farkını hesapla ve maksimum geriye düşüşü güncelle
+          const currentDiff = currentRoundScore1 - currentRoundScore2;
+          if (currentDiff < 0) { // mapTeam1Full geride
+            maxDeficitForMapTeam1 = Math.max(maxDeficitForMapTeam1, Math.abs(currentDiff));
+          } else if (currentDiff > 0) { // mapTeam2Full geride
+            maxDeficitForMapTeam2 = Math.max(maxDeficitForMapTeam2, Math.abs(currentDiff));
+          }
+        });
+
+        // Round Breakdown'ı currentMap'e ekle
+        currentMap.roundBreakdown = {
+          [mapTeam1Full]: { atkRoundsWon: atkRoundsWon[mapTeam1Full], defRoundsWon: defRoundsWon[mapTeam1Full] },
+          [mapTeam2Full]: { atkRoundsWon: atkRoundsWon[mapTeam2Full], defRoundsWon: defRoundsWon[mapTeam2Full] }
+        };
+
+        // Comeback özelliğini belirle
+        const mapFinalScoreParts = currentMap.score.split(' ').map(s => parseInt(s.trim(), 10));
+        const mapFinalScore1 = mapFinalScoreParts[0]; // matchDetails.teams.team1.name'in skoru
+        const mapFinalScore2 = mapFinalScoreParts[1]; // matchDetails.teams.team2.name'in skoru
+
+        let mapWinnerName = null;
+        if (mapFinalScore1 > mapFinalScore2) {
+          mapWinnerName = matchDetails.teams.team1.name;
+        } else if (mapFinalScore2 > mapFinalScore1) {
+          mapWinnerName = matchDetails.teams.team2.name;
+        }
+
+        if (mapWinnerName) {
+          // Eğer kazanan takım mapTeam1Full ise ve o takım comeback yapmışsa
+          if (mapWinnerName === mapTeam1Full && maxDeficitForMapTeam1 >= comebackThreshold) {
+            currentMap.comeback = mapWinnerName;
+          } 
+          // Eğer kazanan takım mapTeam2Full ise ve o takım comeback yapmışsa
+          else if (mapWinnerName === mapTeam2Full && maxDeficitForMapTeam2 >= comebackThreshold) {
+            currentMap.comeback = mapWinnerName;
+          }
+        }
+      }
+    }
+
+    // --- PLAYER STATS ---
+    // Oyuncu istatistik tablolarını bu gameDiv içinde bul
+    const playerStatTablesForMap = $gameDiv.find('table.wf-table-inset.mod-overview');
+
+    if (playerStatTablesForMap.length >= 2) {
+      const team1Table = $(playerStatTablesForMap[0]);
+      const team2Table = $(playerStatTablesForMap[1]);
+
+      const processTeamTable = (table, teamName) => {
+        const players = [];
+        const playerRows = table.find('tbody tr');
+        playerRows.each((j, playerRow) => {
+          const playerName = $(playerRow).find('.mod-player .text-of').text().trim();
+          const agent = $(playerRow).find('.mod-agents img').attr('alt');
+          const playerLinkElement = $(playerRow).find('.mod-player a');
+          const playerHref = playerLinkElement.attr('href');
+          const playerId = playerHref ? playerHref.split('/')[2] : null;
+          const playerUrl = playerHref ? `https://www.vlr.gg${playerHref}` : null;
+
+          const stats = {
+            team: teamName, // Geçirilen teamName'i kullan
+            name: playerName,
+            agent: agent,
+            acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-both').text().trim(),
+            kills: $(playerRow).find('.mod-vlr-kills .side.mod-both').text().trim(),
+            deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-both').text().replace(/\//g, '').trim(),
+            assists: $(playerRow).find('.mod-vlr-assists .side.mod-both').text().trim(),
+            kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-both').text().trim(),
+            hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-both').text().trim(),
+            fk: $(playerRow).find('.mod-fb .side.mod-both').text().trim(),
+            fd: $(playerRow).find('.mod-fd .side.mod-both').text().trim(),
+            plusMinus: $(playerRow).find('.mod-kd-diff .side.mod-both').text().trim(),
+            fkFd: $(playerRow).find('.mod-fk-diff .side.mod-both').text().trim(),
+          };
+
+          const roundStats = {
+            attack: {
+              acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-t').text().trim(),
+              kills: $(playerRow).find('.mod-vlr-kills .side.mod-t').text().trim(),
+              deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-t').text().trim(),
+              assists: $(playerRow).find('.mod-vlr-assists .side.mod-t').text().trim(),
+              kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-t').text().trim(),
+              hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-t').text().trim()
+            },
+            defense: {
+              acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-ct').text().trim(),
+              kills: $(playerRow).find('.mod-vlr-kills .side.mod-ct').text().trim(),
+              deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-ct').text().trim(),
+              assists: $(playerRow).find('.mod-vlr-assists .side.mod-ct').text().trim(),
+              kast: $(playerRow).find('.mod-stat:nth-child(9) .side.mod-ct').text().trim(),
+              hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-ct').text().trim()
+            }
+          };
+
+          players.push({ ...stats, roundStats, playerId, playerUrl });
+        });
+        return players;
+      };
+
+      const team1Players = processTeamTable(team1Table, matchDetails.teams.team1.name);
+      const team2Players = processTeamTable(team2Table, matchDetails.teams.team2.name);
+
+      const sortedPlayers = [...team1Players, ...team2Players].sort((a, b) => {
+        // matchDetails.teams.team1.name ve team2.name zaten temizlenmiş durumda
+        if (a.team === matchDetails.teams.team1.name && b.team === matchDetails.teams.team2.name) return -1;
+        if (a.team === matchDetails.teams.team2.name && b.team === matchDetails.teams.team1.name) return 1;
+        return 0;
+      });
+
+      currentMap.players = sortedPlayers;
+    }
+  });
+
+  // Geçici gameId'yi temizle
+  matchDetails.maps.forEach(map => delete map.gameId);
+
   return matchDetails;
 }
 
