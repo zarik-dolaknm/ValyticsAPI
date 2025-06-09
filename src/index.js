@@ -967,22 +967,41 @@ app.get('/api/players/:id', async (req, res) => {
     const advStatsTables = $('.wf-table');
     let totalStats = {
         agent: "total",
-        use: "",
+        use: 0, // Başlangıç değeri 0 olarak ayarlandı
         rnd: 0,
-        rating: 0,
-        acs: 0,
-        kd: 0,
-        adr: 0,
-        kast: 0,
-        kpr: 0,
-        apr: 0,
-        fkpr: 0,
-        fdpr: 0,
+        rating: null,
+        acs: null,
+        kd: null,
+        adr: null,
+        kast: null,
+        kpr: null,
+        apr: null,
+        fkpr: null,
+        fdpr: null,
         kills: 0,
         deaths: 0,
         assists: 0,
         fk: 0,
-        fd: 0
+        fd: 0,
+        // Yeni sum ve count alanları başlatılıyor
+        ratingSum: 0,
+        ratingCount: 0,
+        acsSum: 0,
+        acsCount: 0,
+        kdSum: 0,
+        kdCount: 0,
+        adrSum: 0,
+        adrCount: 0,
+        kastSum: 0,
+        kastCount: 0,
+        kprSum: 0,
+        kprCount: 0,
+        aprSum: 0,
+        aprCount: 0,
+        fkprSum: 0,
+        fkprCount: 0,
+        fdprSum: 0,
+        fdprCount: 0,
     };
     let agentCount = 0;
 
@@ -1002,7 +1021,7 @@ app.get('/api/players/:id', async (req, res) => {
                 const stats = {
                     use: useText,
                     rnd: parseInt($(row).find('td').eq(2).text().trim()),
-                    rating: parseFloat($(row).find('td').eq(3).text().trim()),
+                    rating: parseFloat($(row).find('td.mod-center').text().trim()),
                     acs: parseFloat($(row).find('td').eq(4).text().trim()),
                     kd: parseFloat($(row).find('td').eq(5).text().trim()),
                     adr: parseFloat($(row).find('td').eq(6).text().trim()),
@@ -1019,28 +1038,73 @@ app.get('/api/players/:id', async (req, res) => {
                 };
 
                 // Toplam değerleri hesapla
-                totalStats.use = `${parseInt(totalStats.use.replace(/[()]/g, '') || 0) + useCount}`;
-                totalStats.rnd += stats.rnd;
-                totalStats.rating += stats.rating;
-                totalStats.acs += stats.acs;
-                totalStats.kd += stats.kd;
-                totalStats.adr += stats.adr;
-                totalStats.kast += stats.kast;
-                totalStats.kpr += stats.kpr;
-                totalStats.apr += stats.apr;
-                totalStats.fkpr += stats.fkpr;
-                totalStats.fdpr += stats.fdpr;
-                totalStats.kills += stats.kills;
-                totalStats.deaths += stats.deaths;
-                totalStats.assists += stats.assists;
-                totalStats.fk += stats.fk;
-                totalStats.fd += stats.fd;
+                totalStats.use += useCount; // Sadece useCount'ı topluyoruz
+
+                totalStats.rnd += stats.rnd || 0;
+
+                if (stats.rating !== null && !isNaN(stats.rating)) {
+                    totalStats.ratingSum += stats.rating;
+                    totalStats.ratingCount++;
+                }
+                if (stats.acs !== null && !isNaN(stats.acs)) {
+                    totalStats.acsSum += stats.acs;
+                    totalStats.acsCount++;
+                }
+                if (stats.kd !== null && !isNaN(stats.kd)) {
+                    totalStats.kdSum += stats.kd;
+                    totalStats.kdCount++;
+                }
+                if (stats.adr !== null && !isNaN(stats.adr)) {
+                    totalStats.adrSum += stats.adr;
+                    totalStats.adrCount++;
+                }
+                if (stats.kast !== null && !isNaN(stats.kast)) {
+                    totalStats.kastSum += stats.kast;
+                    totalStats.kastCount++;
+                }
+                if (stats.kpr !== null && !isNaN(stats.kpr)) {
+                    totalStats.kprSum += stats.kpr;
+                    totalStats.kprCount++;
+                }
+                if (stats.apr !== null && !isNaN(stats.apr)) {
+                    totalStats.aprSum += stats.apr;
+                    totalStats.aprCount++;
+                }
+                if (stats.fkpr !== null && !isNaN(stats.fkpr)) {
+                    totalStats.fkprSum += stats.fkpr;
+                    totalStats.fkprCount++;
+                }
+                if (stats.fdpr !== null && !isNaN(stats.fdpr)) {
+                    totalStats.fdprSum += stats.fdpr;
+                    totalStats.fdprCount++;
+                }
+                
+                totalStats.kills += stats.kills || 0;
+                totalStats.deaths += stats.deaths || 0;
+                totalStats.assists += stats.assists || 0;
+                totalStats.fk += stats.fk || 0;
+                totalStats.fd += stats.fd || 0;
                 agentCount++;
 
                 if(agentName) {
                     playerDetails.agentStats.push({
                         agent: agentName,
-                        ...stats
+                        use: stats.use,
+                        rnd: stats.rnd,
+                        rating: isNaN(stats.rating) ? null : stats.rating,
+                        acs: isNaN(stats.acs) ? null : stats.acs,
+                        kd: isNaN(stats.kd) ? null : stats.kd,
+                        adr: isNaN(stats.adr) ? null : stats.adr,
+                        kast: isNaN(stats.kast) ? null : stats.kast,
+                        kpr: isNaN(stats.kpr) ? null : stats.kpr,
+                        apr: isNaN(stats.apr) ? null : stats.apr,
+                        fkpr: isNaN(stats.fkpr) ? null : stats.fkpr,
+                        fdpr: isNaN(stats.fdpr) ? null : stats.fdpr,
+                        kills: stats.kills,
+                        deaths: stats.deaths,
+                        assists: stats.assists,
+                        fk: stats.fk,
+                        fd: stats.fd,
                     });
                     if (DEBUG) console.log(`Added agent stats for: ${agentName}`);
                 }
@@ -1048,17 +1112,74 @@ app.get('/api/players/:id', async (req, res) => {
         });
 
         // Ortalama değerleri hesapla
-        if (agentCount > 0) {
-            totalStats.rating = (totalStats.rating / agentCount).toFixed(2);
-            totalStats.acs = (totalStats.acs / agentCount).toFixed(1);
-            totalStats.kd = (totalStats.kd / agentCount).toFixed(2);
-            totalStats.adr = (totalStats.adr / agentCount).toFixed(1);
-            totalStats.kast = (totalStats.kast / agentCount).toFixed(0) + '%';
-            totalStats.kpr = (totalStats.kpr / agentCount).toFixed(2);
-            totalStats.apr = (totalStats.apr / agentCount).toFixed(2);
-            totalStats.fkpr = (totalStats.fkpr / agentCount).toFixed(2);
-            totalStats.fdpr = (totalStats.fdpr / agentCount).toFixed(2);
+        if (totalStats.ratingCount > 0) {
+            totalStats.rating = (totalStats.ratingSum / totalStats.ratingCount).toFixed(2);
+        } else {
+            totalStats.rating = null;
         }
+        if (totalStats.acsCount > 0) {
+            totalStats.acs = (totalStats.acsSum / totalStats.acsCount).toFixed(1);
+        } else {
+            totalStats.acs = null;
+        }
+        if (totalStats.kdCount > 0) {
+            totalStats.kd = (totalStats.kdSum / totalStats.kdCount).toFixed(2);
+        } else {
+            totalStats.kd = null;
+        }
+        if (totalStats.adrCount > 0) {
+            totalStats.adr = (totalStats.adrSum / totalStats.adrCount).toFixed(1);
+        } else {
+            totalStats.adr = null;
+        }
+        if (totalStats.kastCount > 0) {
+            totalStats.kast = (totalStats.kastSum / totalStats.kastCount).toFixed(0) + '%';
+        } else {
+            totalStats.kast = null;
+        }
+        if (totalStats.kprCount > 0) {
+            totalStats.kpr = (totalStats.kprSum / totalStats.kprCount).toFixed(2);
+        } else {
+            totalStats.kpr = null;
+        }
+        if (totalStats.aprCount > 0) {
+            totalStats.apr = (totalStats.aprSum / totalStats.aprCount).toFixed(2);
+        } else {
+            totalStats.apr = null;
+        }
+        if (totalStats.fkprCount > 0) {
+            totalStats.fkpr = (totalStats.fkprSum / totalStats.fkprCount).toFixed(2);
+        } else {
+            totalStats.fkpr = null;
+        }
+        if (totalStats.fdprCount > 0) {
+            totalStats.fdpr = (totalStats.fdprSum / totalStats.fdprCount).toFixed(2);
+        } else {
+            totalStats.fdpr = null;
+        }
+
+        // Handle the "use" field formatting for totalStats at the very end
+        totalStats.use = `${totalStats.use}`;
+
+        // Geçici sum ve count alanlarını sil
+        delete totalStats.ratingSum;
+        delete totalStats.ratingCount;
+        delete totalStats.acsSum;
+        delete totalStats.acsCount;
+        delete totalStats.kdSum;
+        delete totalStats.kdCount;
+        delete totalStats.adrSum;
+        delete totalStats.adrCount;
+        delete totalStats.kastSum;
+        delete totalStats.kastCount;
+        delete totalStats.kprSum;
+        delete totalStats.kprCount;
+        delete totalStats.aprSum;
+        delete totalStats.aprCount;
+        delete totalStats.fkprSum;
+        delete totalStats.fkprCount;
+        delete totalStats.fdprSum;
+        delete totalStats.fdprCount;
 
         // Total stats'i listenin başına ekle
         playerDetails.agentStats.unshift(totalStats);
@@ -1489,5 +1610,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`); 
 }); 
