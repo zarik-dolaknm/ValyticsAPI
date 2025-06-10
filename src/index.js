@@ -782,8 +782,8 @@ app.get('/api/events', async (req, res) => {
 
 // Oyuncu detaylarını getiren endpoint
 app.get('/api/players/:id', async (req, res) => {
+  const playerId = req.params.id;
   try {
-    const playerId = req.params.id;
     const timespan = req.query.timespan; // timespan query parametresini al
 
     let playerUrl = `https://www.vlr.gg/player/${playerId}/`;
@@ -964,43 +964,155 @@ app.get('/api/players/:id', async (req, res) => {
     }
 
     // Agent İstatistikleri - Tablo scrape etme
-    const advStatsTables = $$('.wf-table-inset.mod-adv-stats, .mod-adv-stats');
+    const advStatsTables = $('.wf-table');
 
     if (advStatsTables.length > 0) {
         if (DEBUG) console.log("Agent Stats Table found.");
+        let totalStats = {
+            totalUse: 0, // Toplam agent oynama sayısı
+            rounds: 0,
+            rating: 0,
+            acs: 0,
+            kd: 0,
+            adr: 0,
+            kast: 0,
+            kpr: 0,
+            apr: 0,
+            fkpr: 0,
+            fdpr: 0,
+            kills: 0,
+            deaths: 0,
+            assists: 0,
+            fk: 0,
+            fd: 0,
+            agentCount: 0 // Ortalama hesaplamak için agent sayısı
+        };
+
         // tbody içindeki her bir satırı işle
         advStatsTables.each((_, table) => {
-            $$(table).find('tr').each((__, row) => {
-                const playerCell = $$(row).find('td').eq(0);
-                const playerName = cleanText(playerCell.find('div').first().text());
-                console.log('[DEBUG] Table row playerName:', playerName);
-                const stats = {
-                    use: $$(row).find('td').eq(1).text().trim(),
-                    rnd: $$(row).find('td').eq(2).text().trim(),
-                    rating: $$(row).find('td').eq(3).text().trim(),
-                    acs: $$(row).find('td').eq(4).text().trim(),
-                    kd: $$(row).find('td').eq(5).text().trim(),
-                    adr: $$(row).find('td').eq(6).text().trim(),
-                    kast: $$(row).find('td').eq(7).text().trim(),
-                    kpr: $$(row).find('td').eq(8).text().trim(),
-                    apr: $$(row).find('td').eq(9).text().trim(),
-                    fkpr: $$(row).find('td').eq(10).text().trim(),
-                    fdpr: $$(row).find('td').eq(11).text().trim(),
-                    kills: $$(row).find('td').eq(12).text().trim(),
-                    deaths: $$(row).find('td').eq(13).text().trim(),
-                    assists: $$(row).find('td').eq(14).text().trim(),
-                    fk: $$(row).find('td').eq(15).text().trim(),
-                    fd: $$(row).find('td').eq(16).text().trim()
-                };
-                if(playerName) {
+            $(table).find('tbody tr').each((__, row) => {
+                const agentImg = $(row).find('td').eq(0).find('img');
+                const agentName = agentImg.attr('alt');
+                if (DEBUG) console.log('[DEBUG] Processing agent:', agentName);
+
+                const useText = $(row).find('td').eq(1).find('span').text().trim();
+                const useMatch = useText.match(/\((\d+)\)\s*(\d+)%/);
+                const rounds = parseInt($(row).find('td').eq(2).text().trim());
+                const rating = parseFloat($(row).find('td').eq(3).text().trim());
+                const acs = parseFloat($(row).find('td').eq(4).text().trim());
+                const kd = parseFloat($(row).find('td').eq(5).text().trim());
+                const adr = parseFloat($(row).find('td').eq(6).text().trim());
+                const kast = parseFloat($(row).find('td').eq(7).text().trim().replace('%', ''));
+                const kpr = parseFloat($(row).find('td').eq(8).text().trim());
+                const apr = parseFloat($(row).find('td').eq(9).text().trim());
+                const fkpr = parseFloat($(row).find('td').eq(10).text().trim());
+                const fdpr = parseFloat($(row).find('td').eq(11).text().trim());
+                const kills = parseInt($(row).find('td').eq(12).text().trim());
+                const deaths = parseInt($(row).find('td').eq(13).text().trim());
+                const assists = parseInt($(row).find('td').eq(14).text().trim());
+                const fk = parseInt($(row).find('td').eq(15).text().trim());
+                const fd = parseInt($(row).find('td').eq(16).text().trim());
+
+                // Total stats'e ekle
+                if (useMatch) {
+                    totalStats.totalUse += parseInt(useMatch[1]);
+                }
+                totalStats.rounds += rounds;
+                totalStats.rating += rating * rounds;
+                totalStats.acs += acs * rounds;
+                totalStats.kd += kd * rounds;
+                totalStats.adr += adr * rounds;
+                totalStats.kast += kast * rounds;
+                totalStats.kpr += kpr * rounds;
+                totalStats.apr += apr * rounds;
+                totalStats.fkpr += fkpr * rounds;
+                totalStats.fdpr += fdpr * rounds;
+                totalStats.kills += kills;
+                totalStats.deaths += deaths;
+                totalStats.assists += assists;
+                totalStats.fk += fk;
+                totalStats.fd += fd;
+                totalStats.agentCount++;
+
+                if(agentName) {
                     playerDetails.agentStats.push({
-                        agent: playerName,
-                        ...stats
+                        agent: agentName,
+                        use: useMatch ? `${useMatch[1]} (${useMatch[2]}%)` : useText,
+                        rounds: rounds,
+                        rating: rating,
+                        acs: acs,
+                        kd: kd,
+                        adr: adr,
+                        kast: `${kast}%`,
+                        kpr: kpr,
+                        apr: apr,
+                        fkpr: fkpr,
+                        fdpr: fdpr,
+                        kills: kills,
+                        deaths: deaths,
+                        assists: assists,
+                        fk: fk,
+                        fd: fd
                     });
-                    if (DEBUG) console.log(`Added agent stats for: ${playerName}`);
+                    if (DEBUG) console.log(`Added agent stats for: ${agentName}`);
                 }
             });
         });
+
+        // Total stats'i hesapla
+        if (totalStats.rounds > 0) {
+            // Ağırlıklı ortalamaları hesapla
+            const totalRounds = totalStats.rounds;
+            const avgRating = totalStats.rating / totalRounds;
+            const avgAcs = totalStats.acs / totalRounds;
+            const avgKd = totalStats.kd / totalRounds;
+            const avgAdr = totalStats.adr / totalRounds;
+            const avgKast = totalStats.kast / totalRounds;
+            const avgKpr = totalStats.kpr / totalRounds;
+            const avgApr = totalStats.apr / totalRounds;
+            const avgFkpr = totalStats.fkpr / totalRounds;
+            const avgFdpr = totalStats.fdpr / totalRounds;
+
+            // Total agent'ı ekle
+            playerDetails.agentStats.push({
+                agent: "total",
+                use: `${totalStats.totalUse}`,
+                rounds: totalStats.rounds,
+                rating: avgRating.toFixed(2),
+                acs: avgAcs.toFixed(1),
+                kd: avgKd.toFixed(2),
+                adr: avgAdr.toFixed(1),
+                kast: `${avgKast.toFixed(0)}%`,
+                kpr: avgKpr.toFixed(2),
+                apr: avgApr.toFixed(2),
+                fkpr: avgFkpr.toFixed(2),
+                fdpr: avgFdpr.toFixed(2),
+                kills: totalStats.kills,
+                deaths: totalStats.deaths,
+                assists: totalStats.assists,
+                fk: totalStats.fk,
+                fd: totalStats.fd
+            });
+
+            playerDetails.totalStats = {
+                use: `${totalStats.totalUse}`,
+                rounds: totalStats.rounds,
+                rating: avgRating.toFixed(2),
+                acs: avgAcs.toFixed(1),
+                kd: avgKd.toFixed(2),
+                adr: avgAdr.toFixed(1),
+                kast: `${avgKast.toFixed(0)}%`,
+                kpr: avgKpr.toFixed(2),
+                apr: avgApr.toFixed(2),
+                fkpr: avgFkpr.toFixed(2),
+                fdpr: avgFdpr.toFixed(2),
+                kills: totalStats.kills,
+                deaths: totalStats.deaths,
+                assists: totalStats.assists,
+                fk: totalStats.fk,
+                fd: totalStats.fd
+            };
+        }
     } else {
         if (DEBUG) console.log("Agent Stats Table not found.");
     }
