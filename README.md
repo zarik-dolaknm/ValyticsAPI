@@ -225,68 +225,56 @@ API, `${HOST}:${PORT}` adresinde çalışır. Örneğin, yerel makinenizde varsa
 
 ### Belirli Bir Oyuncunun Detaylarını Getirme
 
--   `GET /api/players/:id`
-    -   Belirli bir oyuncu ID'sine ait detaylı bilgileri (istatistikler, takımlar, dereceler vb.) döndürür.
+-   `GET /api/players/{id}`
+    -   Belirli bir Valorant oyuncusunun detaylarını ve tüm maç geçmişini (tüm sayfaları gezerek) getirir.
 
     -   **URL Parametreleri:**
-        -   `id` (gerekli): Oyuncu ID'si (Örnek: 312).
+        -   `id` (string, zorunlu): Oyuncu ID'si (örn: 8041)
+        -   `timespan` (string, opsiyonel): İstatistik zaman aralığı. Sadece şu değerleri alabilir: `30d`, `60d`, `90d`
 
-    -   **Query Parametreleri:**
-        -   `timespan` (isteğe bağlı): İstatistiklerin çekileceği zaman dilimi. Alabileceği değerler: `30d`, `60d`, `90d`, `all`. Belirtilmezse varsayılan değer kullanılır.
-
-    -   **Örnek Kullanım:**
-        -   `/api/players/312` (Varsayılan zaman dilimi)
-        -   `/api/players/312?timespan=90d` (Son 90 gün istatistikleri)
+    -   **Örnek Kullanım:** `/api/players/8041`
 
     -   **Dönen Veri Yapısı:**
         ```json
         {
-          "id": "312",
-          "name": "Sayf",
-          "realName": "Saif Jibraeel",
-          "tag": "@DSajoof",
-          "country": "SE",
-          "url": "https://www.vlr.gg/player/312/sayf/",
-          "agentStats": [
-            {
-              "agent": "Tejo",
-              "use": "(10) 48%",
-              // ... diğer agent istatistikleri ...
-            }
-            // ... diğer agentlar ...
-          ],
+          "id": "8041",
+          "name": "Brave",
+          "realName": "Eren Kasırga",
+          "tag": "@erenbrave",
+          "country": "TURKEY",
+          "url": "https://www.vlr.gg/player/8041/",
+          "agentStats": [],
           "recentResults": [
             {
-              "eventName": "EWC 2025 EMEA Qualifier",
-              "matchId": "12345",
-              // ... diğer maç bilgileri ...
+              "matchId": "478051",
+              "url": "https://www.vlr.gg/478051/fenerbah-e-esports-vs-eternal-fire-challengers-league-2025-t-rkiye-birlik-split-2-lr2",
+              "event": "VCL 25: TR S2 Playoffs ⋅ LR2",
+              "stage": "Playoffs ⋅ LR2",
+              "team1": {
+                "name": "Eternal Fire",
+                "tag": "EF",
+                "logo": "https://owcdn.net/img/6628980dcdaea.png"
+              },
+              "team2": {
+                "name": "Fenerbahçe Esports",
+                "tag": "FB",
+                "logo": "https://owcdn.net/img/6712e0d973b7b.png"
+              },
+              "score": "1 : 2",
+              "date": "2025/04/29",
+              "logo": "https://owcdn.net/img/6628980dcdaea.png"
             }
-            // ... diğer sonuçlar ...
+            // ... diğer maçlar ...
           ],
-          "currentTeams": [
-            {
-              "name": "Team Vitality",
-              "joinDate": "joined in September 2023"
-            }
-          ],
-          "pastTeams": [
-            {
-              "name": "Team Liquid",
-              "dates": "November 2022 – September 2023"
-            }
-            // ... diğer eski takımlar ...
-          ],
-          "eventPlacements": [
-            {
-              "eventName": "Champions Tour 2025: EMEA Stage 1",
-              "placement": "7th–8th",
-              // ... diğer derece bilgileri ...
-            }
-            // ... diğer dereceler ...
-          ],
-          "totalWinnings": "$92,345"
+          "currentTeams": [ ... ],
+          "pastTeams": [ ... ],
+          "totalWinnings": null
         }
         ```
+
+    -   **Notlar:**
+        -   `recentResults` dizisi, oyuncunun tüm geçmiş maçlarını (tüm sayfalar) ve her maç için event, stage, takımlar, skor, tarih, logo gibi detayları içerir.
+        -   `timespan` parametresi sadece `30d`, `60d`, `90d` değerlerini alabilir. Farklı bir değer verilirse default davranış uygulanır veya hata dönebilir.
 
 ### Oyuncu Gelişmiş İstatistikleri (Advanced Stats)
 

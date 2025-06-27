@@ -504,6 +504,7 @@ async function getMatchDetails(matchId) {
             team: teamName, // Geçirilen teamName'i kullan
             name: playerName,
             agent: agent,
+            rating: $(playerRow).find('.mod-stat:nth-child(3) .side.mod-both').text().trim(),
             acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-both').text().trim(),
             kills: $(playerRow).find('.mod-vlr-kills .side.mod-both').text().trim(),
             deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-both').text().replace(/\//g, '').trim(),
@@ -518,6 +519,7 @@ async function getMatchDetails(matchId) {
 
           const roundStats = {
             attack: {
+              rating: $(playerRow).find('.mod-stat:nth-child(3) .side.mod-t').text().trim(),
               acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-t').text().trim(),
               kills: $(playerRow).find('.mod-vlr-kills .side.mod-t').text().trim(),
               deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-t').text().trim(),
@@ -526,6 +528,7 @@ async function getMatchDetails(matchId) {
               hs: $(playerRow).find('.mod-stat:nth-child(11) .side.mod-t').text().trim()
             },
             defense: {
+              rating: $(playerRow).find('.mod-stat:nth-child(3) .side.mod-ct').text().trim(),
               acs: $(playerRow).find('.mod-stat:nth-child(4) .side.mod-ct').text().trim(),
               kills: $(playerRow).find('.mod-vlr-kills .side.mod-ct').text().trim(),
               deaths: $(playerRow).find('.mod-vlr-deaths .side.mod-ct').text().trim(),
@@ -1400,4 +1403,77 @@ async function calculateRosterStability(teamId) {
   }
 }
 
-module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability }; 
+/**
+ * Bir oyuncunun tüm maç geçmişini (tüm sayfaları gezerek) detaylı şekilde çeker.
+ * @param {string} playerId - Oyuncu ID'si
+ * @returns {Promise<Array>} - Detaylı maç listesi
+ */
+async function getPlayerMatchesDetailed(playerId) {
+  const results = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const url = `https://www.vlr.gg/player/matches/${playerId}/?page=${page}`;
+    const response = await http.get(url);
+    const $ = cheerio.load(response.data);
+    const cards = $('a.fc-flex.m-item.wf-card, a.wf-card.fc-flex.m-item');
+    if (cards.length === 0) {
+      hasMore = false;
+      break;
+    }
+    cards.each((i, el) => {
+      const matchLink = $(el).attr('href');
+      const matchId = matchLink ? matchLink.split('/')[1] : null;
+      const url = matchLink ? `https://www.vlr.gg${matchLink}` : null;
+      // Event ve stage
+      const eventDiv = $(el).find('.m-item-event');
+      const event = cleanText(eventDiv.find('div').first().text());
+      const stage = cleanText(eventDiv.contents().filter(function() { return this.type === 'text'; }).text());
+      let eventFull = event;
+      if (stage) {
+        const cleanStage = stage.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+        eventFull = `${event} ${cleanStage}`.replace(/\s+⋅\s+/g, ' ⋅ ');
+      }
+      // Takımlar
+      const team1 = cleanText($(el).find('.m-item-team').first().find('.m-item-team-name').text());
+      const team1Tag = cleanText($(el).find('.m-item-team').first().find('.m-item-team-tag').text());
+      let team1Logo = $(el).find('.m-item-team').first().find('img').attr('src');
+      const team2 = cleanText($(el).find('.m-item-team.mod-right, .m-item-team').last().find('.m-item-team-name').text());
+      const team2Tag = cleanText($(el).find('.m-item-team.mod-right, .m-item-team').last().find('.m-item-team-tag').text());
+      let team2Logo = $(el).find('.m-item-team.mod-right, .m-item-team').last().find('img').attr('src');
+      // Ana maç kartı logoları (takım logoları için yedek)
+      let mainLogo1 = $(el).find('.m-item-logo img').first().attr('src');
+      let mainLogo2 = $(el).find('.m-item-logo.mod-right img').first().attr('src');
+      if (!mainLogo1) {
+        mainLogo1 = $(el).find('.m-item-thumb img').first().attr('src');
+      }
+      // Eğer takım logoları null ise, karttaki ana logoları kullan
+      if (!team1Logo && mainLogo1) team1Logo = mainLogo1;
+      if (!team2Logo && mainLogo2) team2Logo = mainLogo2;
+      // Skor
+      const scoreDiv = $(el).find('.m-item-result');
+      const score1 = cleanText(scoreDiv.find('span').first().text());
+      const score2 = cleanText(scoreDiv.find('span').last().text());
+      const score = `${score1} : ${score2}`;
+      // Tarih
+      const date = cleanText($(el).find('.m-item-date div').first().text());
+      // Logo URL'lerini tam yap
+      const fixLogo = (src) => src ? (src.startsWith('http') ? src : `https://owcdn.net${src}`) : null;
+      results.push({
+        matchId,
+        url,
+        event: eventFull,
+        stage,
+        team1: { name: team1, tag: team1Tag, logo: fixLogo(team1Logo) },
+        team2: { name: team2, tag: team2Tag, logo: fixLogo(team2Logo) },
+        score,
+        date,
+        logo: fixLogo(mainLogo1)
+      });
+    });
+    page++;
+  }
+  return results;
+}
+
+module.exports = { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability, getPlayerMatchesDetailed }; 

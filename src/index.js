@@ -5,7 +5,7 @@ const cheerio = require('cheerio');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJSDoc = require('swagger-jsdoc');
 require('dotenv').config();
-const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability } = require('./utils');
+const { cleanText, withCache, handleHttpError, getEvents, getTeams, getMatchDetails, getTeamMatches, searchPlayersAndTeams, getPlayerAdvancedStats, calculateRosterStability, getPlayerMatchesDetailed } = require('./utils');
 
 console.log(`DEBUG mode status from process.env.DEBUG: ${process.env.DEBUG}`);
 
@@ -178,10 +178,45 @@ app.get('/', (req, res) => {
  *         name: timespan
  *         schema:
  *           type: string
- *         description: İstatistik zaman aralığı (opsiyonel)
+ *           enum: [30d, 60d, 90d]
+ *         description: İstatistik zaman aralığı (sadece 30d, 60d, 90d değerleri geçerlidir)
  *     responses:
  *       200:
  *         description: Oyuncu detayları
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "8041"
+ *               name: "Brave"
+ *               realName: "Eren Kasırga"
+ *               tag: "@erenbrave"
+ *               country: "TURKEY"
+ *               url: "https://www.vlr.gg/player/8041/"
+ *               agentStats: []
+ *               recentResults:
+ *                 - matchId: "478051"
+ *                   url: "https://www.vlr.gg/478051/fenerbah-e-esports-vs-eternal-fire-challengers-league-2025-t-rkiye-birlik-split-2-lr2"
+ *                   event: "VCL 25: TR S2 Playoffs ⋅ LR2"
+ *                   stage: "Playoffs ⋅ LR2"
+ *                   team1:
+ *                     name: "Eternal Fire"
+ *                     tag: "EF"
+ *                     logo: "https://owcdn.net/img/6628980dcdaea.png"
+ *                   team2:
+ *                     name: "Fenerbahçe Esports"
+ *                     tag: "FB"
+ *                     logo: "https://owcdn.net/img/6712e0d973b7b.png"
+ *                   score: "1 : 2"
+ *                   date: "2025/04/29"
+ *                   logo: "https://owcdn.net/img/6628980dcdaea.png"
+ *               currentTeams:
+ *                 - id: "123"
+ *                   name: "Eternal Fire"
+ *                   joinDate: "2024/01/01"
+ *                   logo: "https://owcdn.net/img/6628980dcdaea.png"
+ *                   url: "https://www.vlr.gg/team/123/eternal-fire"
+ *               pastTeams: []
+ *               totalWinnings: null
  *       500:
  *         description: Hata
  */
@@ -817,7 +852,6 @@ app.get('/api/players/:id', async (req, res) => {
         }
     }
 
-
     const playerDetails = {
       id: playerId,
       name: playerNameFromProfile,
@@ -942,25 +976,12 @@ app.get('/api/players/:id', async (req, res) => {
         if (DEBUG) console.log("Past teams container not found");
     }
 
-    // Maç geçmişini çek
+    // Maç geçmişini çek (YENİ YÖNTEM: TÜM SAYFALAR VE DETAYLI)
     try {
-      const matchesUrl = `https://www.vlr.gg/player/matches/${playerId}/`;
-      const matchesRes = await http.get(matchesUrl);
-      const $$ = cheerio.load(matchesRes.data);
-      $$('.wf-card.fc-flex.m-item').each((i, el) => {
-        const matchLink = $$(el).attr('href');
-        const matchId = matchLink ? matchLink.split('/')[1] : null;
-        if (matchId) {
-          playerDetails.recentResults.push({
-            matchId,
-            url: `https://www.vlr.gg${matchLink}`
-            // istersen event, rakip, skor, tarih gibi alanları da ekle
-          });
-        }
-      });
-      if (DEBUG) console.log(`[DEBUG] recentResults from /player/matches/${playerId}/:`, playerDetails.recentResults);
+      playerDetails.recentResults = await getPlayerMatchesDetailed(playerId);
+      if (DEBUG) console.log(`[DEBUG] recentResults (detailed) from /player/matches/${playerId}/:`, playerDetails.recentResults);
     } catch (err) {
-      if (DEBUG) console.log(`[DEBUG] Error fetching matches for player ${playerId}:`, err.message);
+      if (DEBUG) console.log(`[DEBUG] Error fetching detailed matches for player ${playerId}:`, err.message);
     }
 
     // Agent İstatistikleri - Tablo scrape etme
