@@ -841,12 +841,12 @@ app.get('/api/players/:id', async (req, res) => {
       || cleanText($('h1.wf-title').first().text());
     const realName = $('.player-header h2').text().trim(); // Gerçek adı
     // Oyuncu fotoğrafı: .player-header içindeki ilk img
-    let playerPhoto = null;
+    let playerPicture = null;
     const playerImg = $('.player-header img').first();
     if (playerImg.length > 0) {
       let src = playerImg.attr('src');
       if (src) {
-        playerPhoto = src.startsWith('http') ? src : `https://owcdn.net${src}`;
+        playerPicture = src.startsWith('http') ? src : `https://owcdn.net${src}`;
       }
     }
     // Ülke bilgisini bayrak class'ından çekelim
@@ -864,7 +864,7 @@ app.get('/api/players/:id', async (req, res) => {
       id: playerId,
       name: playerNameFromProfile,
       realName: realName,
-      photo: playerPhoto,
+      playerPicture: playerPicture,
       country: country,
       url: playerUrl,
       agentStats: [],

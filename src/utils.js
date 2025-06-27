@@ -1124,67 +1124,58 @@ async function getPlayerAdvancedStats(playerId, matchLimit = 5) {
   }
   // Aynı isimli map'leri birleştir (başındaki sayı ve boşlukları silerek)
   const normalizeMapName = name => name ? name.replace(/^\d+\s*/, '').trim() : '';
-  const mapsStats = [];
+  // Map birleştirme için: { mapName: { played, advancedStatsSum, advancedStatsCount } }
+  const mapAgg = {};
   for (const mapObj of mapsStatsRaw) {
     const normName = normalizeMapName(mapObj.map);
-    const existing = mapsStats.find(m => normalizeMapName(m.map) === normName);
-    if (existing) {
-      existing.matrixStats = mergeMatrixStats(existing.matrixStats, mapObj.matrixStats);
-      existing.advancedStats = mergeAdvancedStats(existing.advancedStats, mapObj.advancedStats);
-    } else {
-      mapsStats.push({ ...mapObj, map: normName });
+    if (!mapAgg[normName]) {
+      mapAgg[normName] = {
+        map: normName,
+        played: 0,
+        advancedStatsSum: {},
+        advancedStatsCount: {},
+      };
+    }
+    mapAgg[normName].played++;
+    // advancedStats değerlerini topla
+    if (mapObj.advancedStats) {
+      for (const [k, v] of Object.entries(mapObj.advancedStats)) {
+        if (!mapAgg[normName].advancedStatsSum[k]) mapAgg[normName].advancedStatsSum[k] = 0;
+        if (!mapAgg[normName].advancedStatsCount[k]) mapAgg[normName].advancedStatsCount[k] = 0;
+        if (!isNaN(Number(v))) {
+          mapAgg[normName].advancedStatsSum[k] += Number(v);
+          mapAgg[normName].advancedStatsCount[k]++;
+        }
+      }
     }
   }
-  // Boş map'leri çıkar (hem matrixStats hem advancedStats boşsa) ve 'All Maps' olanı da çıkar
-  const filteredMaps = mapsStats.filter(map => {
-    const hasMatrix = map.matrixStats && (Object.values(map.matrixStats.normal).length > 0 || Object.values(map.matrixStats.fkfd).length > 0 || Object.values(map.matrixStats.op).length > 0);
-    const hasAdv = map.advancedStats && Object.values(map.advancedStats).some(v => v !== undefined && v !== null && v !== '' && v !== '0');
-    // 'All Maps' hariç tut
-    return (hasMatrix || hasAdv) && map.map.toLowerCase() !== 'all maps';
-  });
-  // --- MatrixStats'tan özet hesapla ---
-  let opKills = 0, opDeaths = 0, fk = 0, fd = 0;
-  // sumStats: filteredMaps üzerinden advancedStats değerlerini topla
-  const sumStats = {};
-  statKeys.forEach(k => sumStats[k] = 0);
-  filteredMaps.forEach(map => {
-    if (map.advancedStats) {
-      statKeys.forEach(k => {
-        const val = map.advancedStats[k];
-        if (!isNaN(Number(val))) sumStats[k] += Number(val);
-      });
-    }
-    if (map.matrixStats && map.matrixStats.op) {
-      Object.values(map.matrixStats.op).forEach(obj => {
-        if (obj && obj.player && !isNaN(Number(obj.player))) opKills += Number(obj.player);
-        if (obj && obj.opponent && !isNaN(Number(obj.opponent))) opDeaths += Number(obj.opponent);
-      });
-    }
-    if (map.matrixStats && map.matrixStats.fkfd) {
-      Object.values(map.matrixStats.fkfd).forEach(obj => {
-        if (obj && obj.player && !isNaN(Number(obj.player))) fk += Number(obj.player);
-        if (obj && obj.opponent && !isNaN(Number(obj.opponent))) fd += Number(obj.opponent);
-      });
-    }
-  });
-  // matchCount: non-empty maps
-  const matchCount = filteredMaps.length;
-  const summary = { opKills, opDeaths, fk, fd };
-  const avgStats = {};
-  statKeys.forEach(k => {
-    avgStats[k] = matchCount > 0 ? (sumStats[k] / matchCount).toFixed(2) : 0;
-  });
-  avgStats.opKills = matchCount > 0 ? (opKills / matchCount).toFixed(2) : 0;
-  avgStats.opDeaths = matchCount > 0 ? (opDeaths / matchCount).toFixed(2) : 0;
-  avgStats.fk = matchCount > 0 ? (fk / matchCount).toFixed(2) : 0;
-  avgStats.fd = matchCount > 0 ? (fd / matchCount).toFixed(2) : 0;
+  // Sonuç maps dizisi: advancedStats ortalaması ve played alanı ile
+  const filteredMaps = Object.values(mapAgg)
+    .filter(obj => obj.map && obj.map !== 'N/A')
+    .map(obj => {
+      const avgStats = {};
+      for (const k of Object.keys(obj.advancedStatsSum)) {
+        const sum = obj.advancedStatsSum[k];
+        const count = obj.advancedStatsCount[k];
+        let key = k;
+        if (key === 'ECON') key = 'ECON_AVG';
+        if (key === 'PL') key = 'Plant';
+        if (key === 'DE') key = 'Defuse';
+        avgStats[key] = count > 0 ? (sum / count).toFixed(2) : "0";
+      }
+      return {
+        map: obj.map,
+        advancedStats: avgStats,
+        played: obj.played
+      };
+    });
+  // matrixStats alanını maps'ten silmeye gerek yok çünkü eklenmiyor
+  // ... existing code ...
   return {
     playerId,
-    matchCount,
-    total: sumStats,
-    average: avgStats,
-    summary,
+    matchCount: recentResults.length,
     maps: filteredMaps
+    // total, average, summary gibi diğer alanları da ekleyebilirsin
   };
 }
 
@@ -1321,7 +1312,7 @@ async function calculateRosterStability(teamId) {
               console.log(`[DEBUG][rosterStability] Match ${matchId} players:`, [...players]);
               // Cache for 1 hour
               cache.set(cacheKey, matchData, 3600);
-            } catch (err) {
+    } catch (err) {
               console.error(`[ERROR][rosterStability] Error fetching match ${matchId}:`, err);
               return null;
             }
