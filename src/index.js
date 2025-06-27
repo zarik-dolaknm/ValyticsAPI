@@ -840,7 +840,15 @@ app.get('/api/players/:id', async (req, res) => {
     let playerNameFromProfile = cleanText($('.player-header h1.wf-title').first().text()) 
       || cleanText($('h1.wf-title').first().text());
     const realName = $('.player-header h2').text().trim(); // Gerçek adı
-    const playerTag = $('.player-header .player-tag').text().trim(); // Oyuncu tagı (@...)
+    // Oyuncu fotoğrafı: .player-header içindeki ilk img
+    let playerPhoto = null;
+    const playerImg = $('.player-header img').first();
+    if (playerImg.length > 0) {
+      let src = playerImg.attr('src');
+      if (src) {
+        playerPhoto = src.startsWith('http') ? src : `https://owcdn.net${src}`;
+      }
+    }
     // Ülke bilgisini bayrak class'ından çekelim
     const countryFlagElement = $('.player-header i.flag[class*="mod-"]');
     let country = 'Unknown';
@@ -856,7 +864,7 @@ app.get('/api/players/:id', async (req, res) => {
       id: playerId,
       name: playerNameFromProfile,
       realName: realName,
-      tag: playerTag,
+      photo: playerPhoto,
       country: country,
       url: playerUrl,
       agentStats: [],
